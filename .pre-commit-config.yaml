@@ -12,7 +12,7 @@ repos:
         exclude: ^tests/store/testdata/.*$
 
   - repo: https://github.com/psf/black
-    rev: 25.12.0
+    rev: 26.1.0
     hooks:
       - id: black
   - repo: https://github.com/charliermarsh/ruff-pre-commit
