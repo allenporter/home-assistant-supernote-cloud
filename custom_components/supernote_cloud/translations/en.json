@@ -24,12 +24,12 @@
         }
       },
       "reauth_confirm": {
-        "title": "[%key:common::config_flow::title::reauth%]",
+        "title": "Reauthenticate",
         "description": "The Supernote Cloud integration needs to re-authenticate your account"
       }
     },
     "abort": {
-      "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
+      "reauth_successful": "Re-authentication was successful"
     },
     "error": {
       "auth_error": "Authentication error, check username, phone number or password.",
