@@ -1,13 +1,10 @@
 """LLM APIs for Supernote Cloud."""
 
-from typing import cast
 import logging
+from typing import cast
 
-import voluptuous as vol
 import slugify
-from supernote.client.extended import ExtendedClient
-from supernote.client.exceptions import UnauthorizedException
-
+import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
@@ -20,6 +17,8 @@ from homeassistant.helpers.llm import (
     async_register_api,
 )
 from homeassistant.util.json import JsonObjectType
+from supernote.client.exceptions import UnauthorizedException
+from supernote.client.extended import ExtendedClient
 
 from .const import DOMAIN
 from .types import SupernoteCloudConfigEntry
@@ -93,7 +92,7 @@ class SearchTool(Tool):
         except UnauthorizedException as err:
             self._entry.async_start_reauth(hass)
             return {"error": f"Supernote authentication failed: {err}"}
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             return {"error": f"Error searching Supernote: {err}"}
 
         return cast(
@@ -157,7 +156,7 @@ class TranscriptTool(Tool):
         except UnauthorizedException as err:
             self._entry.async_start_reauth(hass)
             return {"error": f"Supernote authentication failed: {err}"}
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             return {"error": f"Error fetching Supernote transcript: {err}"}
 
         return cast(
