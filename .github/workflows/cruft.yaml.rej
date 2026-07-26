@@ -8,7 +8,7 @@ diff a/.github/workflows/cruft.yaml b/.github/workflows/cruft.yaml	(rejected hun
    schedule:
      - cron: "0 0 * * *"
 +  workflow_dispatch:
- 
+
  jobs:
    update:
 +    if: github.ref == 'refs/heads/main'
@@ -18,7 +18,7 @@ diff a/.github/workflows/cruft.yaml b/.github/workflows/cruft.yaml	(rejected hun
 @@ -63,6 +64,11 @@ jobs:
              exit 1
            fi
- 
+
 +          if grep -rn 'cookiecutter\.' . --exclude-dir=.git --exclude=.cruft.json; then
 +            echo "Error: Unrendered Cookiecutter Jinja tags detected in repository!"
 +            exit 1
