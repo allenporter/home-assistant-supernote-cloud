@@ -5,18 +5,16 @@ import logging
 from typing import cast
 
 import aiohttp
-
+from homeassistant.const import CONF_ACCESS_TOKEN, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.util import dt as dt_util
 from supernote.client.auth import AbstractAuth
-from supernote.client.login_client import LoginClient
 from supernote.client.client import Client
 from supernote.client.exceptions import SupernoteException, UnauthorizedException
+from supernote.client.login_client import LoginClient
 
-from homeassistant.core import HomeAssistant
-from homeassistant.const import CONF_ACCESS_TOKEN, CONF_PASSWORD, CONF_USERNAME
-from homeassistant.exceptions import HomeAssistantError, ConfigEntryAuthFailed
-from homeassistant.util import dt as dt_util
-
-from .const import CONF_TOKEN_TIMESTAMP, TOKEN_LIFETIME, CONF_HOST, DEFAULT_HOST
+from .const import CONF_HOST, CONF_TOKEN_TIMESTAMP, DEFAULT_HOST, TOKEN_LIFETIME
 from .types import SupernoteCloudConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,7 +47,7 @@ class ConfigEntryAuth(AbstractAuth):
     def is_expired(self) -> bool:
         token_timestamp = self._entry.options.get(CONF_TOKEN_TIMESTAMP, 0)
         token_ts = datetime.datetime.fromtimestamp(
-            int(token_timestamp), tz=datetime.timezone.utc
+            int(token_timestamp), tz=datetime.UTC
         )
         now = dt_util.now()
         age = now - token_ts

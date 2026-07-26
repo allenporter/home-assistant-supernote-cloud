@@ -4,14 +4,14 @@ from unittest.mock import MagicMock
 
 import pytest
 from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import UnitOfInformation
 from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntryState
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+from supernote.client.exceptions import ApiException
+from supernote.models.file_device import AllocationVO, CapacityLocalVO
 
 from custom_components.supernote_cloud.const import DOMAIN
-from supernote.client.exceptions import ApiException
-from supernote.models.file_device import CapacityLocalVO, AllocationVO
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import CONFIG_ENTRY_ID
 

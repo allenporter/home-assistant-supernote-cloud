@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from enum import StrEnum
-import logging
 from typing import Self, cast
 
-from supernote.client.api import Supernote
-from supernote.client.exceptions import ApiException, UnauthorizedException
-from supernote.models.base import BooleanEnum
-from aiohttp.web import Response, Request, StreamResponse
-
+from aiohttp.web import Request, Response, StreamResponse
 from homeassistant.components.http.view import HomeAssistantView
 from homeassistant.components.media_player import MediaClass, MediaType
 from homeassistant.components.media_player.errors import BrowseError
@@ -22,9 +18,12 @@ from homeassistant.components.media_source import (
     PlayMedia,
 )
 from homeassistant.core import HomeAssistant, callback
+from supernote.client.api import Supernote
+from supernote.client.exceptions import ApiException, UnauthorizedException
+from supernote.models.base import BooleanEnum
 
-from . import SupernoteCloudConfigEntry
 from .const import DOMAIN
+from .types import SupernoteCloudConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -481,10 +480,7 @@ class SupernoteCloudMediaSource(MediaSource):
 
     def _async_config_entries(self) -> list[SupernoteCloudConfigEntry]:
         """Return all config entries that support photo library reads."""
-        entries = []
-        for entry in self.hass.config_entries.async_loaded_entries(DOMAIN):
-            entries.append(entry)
-        return entries
+        return list(self.hass.config_entries.async_loaded_entries(DOMAIN))
 
     def _async_config_entry(self, config_entry_id: str) -> SupernoteCloudConfigEntry:
         """Return a config entry with the specified id."""

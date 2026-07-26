@@ -2,49 +2,48 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from typing import Any
-import logging
 
 import voluptuous as vol
-from supernote.client.exceptions import (
-    SupernoteException,
-    ApiException,
-    SmsVerificationRequired,
-)
-from supernote.client.login_client import LoginClient
-from supernote.client.client import Client
-from supernote.client.api import Supernote
-
-from homeassistant.core import callback
 from homeassistant.config_entries import (
+    SOURCE_REAUTH,
     ConfigFlow,
     ConfigFlowResult,
-    SOURCE_REAUTH,
     OptionsFlow,
 )
+from homeassistant.const import (
+    CONF_ACCESS_TOKEN,
+    CONF_PASSWORD,
+    CONF_UNIQUE_ID,
+    CONF_USERNAME,
+)
+from homeassistant.core import callback
 from homeassistant.helpers import selector
+from homeassistant.helpers.aiohttp_client import (
+    async_get_clientsession,
+)
 from homeassistant.helpers.schema_config_entry_flow import (
     SchemaFlowFormStep,
     SchemaOptionsFlowHandler,
 )
 from homeassistant.util import dt as dt_util
-from homeassistant.helpers.aiohttp_client import (
-    async_get_clientsession,
+from supernote.client.api import Supernote
+from supernote.client.client import Client
+from supernote.client.exceptions import (
+    ApiException,
+    SmsVerificationRequired,
+    SupernoteException,
 )
-from homeassistant.const import (
-    CONF_ACCESS_TOKEN,
-    CONF_USERNAME,
-    CONF_PASSWORD,
-    CONF_UNIQUE_ID,
-)
+from supernote.client.login_client import LoginClient
 
 from .const import (
-    DOMAIN,
     CONF_API_USERNAME,
-    CONF_TOKEN_TIMESTAMP,
     CONF_HOST,
+    CONF_TOKEN_TIMESTAMP,
     DEFAULT_HOST,
+    DOMAIN,
 )
 from .types import SupernoteCloudConfigEntry
 
@@ -181,11 +180,7 @@ class SupernoteCloudConfigFlowHandler(ConfigFlow, domain=DOMAIN):
         sn = Supernote.from_token(access_token, host=self._host, session=websession)
 
         # Let's try to get something to confirm it works.
-        try:
-            await sn.device.get_capacity()
-        except SupernoteException:
-            # If we can't even get capacity, maybe token is bad or host is wrong.
-            raise
+        await sn.device.get_capacity()
 
         assert self._username is not None
         unique_id = self._username
