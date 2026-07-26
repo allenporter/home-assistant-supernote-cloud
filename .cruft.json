@@ -1,6 +1,6 @@
 {
   "template": "http://github.com/allenporter/cookiecutter-home-assistant-custom-component",
-  "commit": "f36c3e8b0e97ea0f01e525e0607f8b4027196f1d",
+  "commit": "b301cdca5d81ee7a578ff4440c9e8f7daeeb8d29",
   "checkout": null,
   "context": {
     "cookiecutter": {
@@ -12,7 +12,8 @@
       "name": "Supernote Cloud",
       "description": "Home Assistant Custom Component dedicated to the excellent Ratta Supernote enthusiasts",
       "version": "0.0.1",
-      "_template": "http://github.com/allenporter/cookiecutter-home-assistant-custom-component"
+      "_template": "http://github.com/allenporter/cookiecutter-home-assistant-custom-component",
+      "_commit": "b301cdca5d81ee7a578ff4440c9e8f7daeeb8d29"
     }
   },
   "directory": null
