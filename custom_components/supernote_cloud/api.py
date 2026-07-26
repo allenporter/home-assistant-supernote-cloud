@@ -1,9 +1,8 @@
 """Supernote Cloud API client helper."""
 
-from supernote.client.api import Supernote
-
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import aiohttp_client
+from supernote.client.api import Supernote
 
 from .auth import ConfigEntryAuth
 from .const import CONF_HOST, DEFAULT_HOST
