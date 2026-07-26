@@ -1,29 +1,27 @@
 """Fixtures for the custom component."""
 
-from collections.abc import Generator, AsyncGenerator
 import logging
-from unittest.mock import patch, AsyncMock
+from collections.abc import AsyncGenerator, Generator
+from unittest.mock import AsyncMock, patch
 
 import pytest
-
 from homeassistant.const import (
-    Platform,
     CONF_ACCESS_TOKEN,
-    CONF_UNIQUE_ID,
     CONF_PASSWORD,
+    CONF_UNIQUE_ID,
+    Platform,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
-
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
 )
 
 from custom_components.supernote_cloud.const import (
-    DOMAIN,
-    CONF_TOKEN_TIMESTAMP,
     CONF_API_USERNAME,
+    CONF_TOKEN_TIMESTAMP,
+    DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,7 +34,7 @@ CONFIG_ENTRY_TITLE = "user-name"
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(
     enable_custom_integrations: None,
-) -> Generator[None, None, None]:
+) -> Generator[None]:
     """Enable custom integration."""
     _ = enable_custom_integrations  # unused
     yield
@@ -88,7 +86,7 @@ async def mock_config_entry(
 
 
 @pytest.fixture(name="mock_supernote")
-def mock_supernote_fixture() -> Generator[AsyncMock, None, None]:
+def mock_supernote_fixture() -> Generator[AsyncMock]:
     """Mock the Supernote client."""
     # Force reload of the component modules to ensure they pick up the patch
     import sys
@@ -109,7 +107,7 @@ def mock_supernote_fixture() -> Generator[AsyncMock, None, None]:
         mock_sn.web.path_query = AsyncMock()
         mock_sn.web.query_user = AsyncMock()
 
-        from supernote.models.file_device import CapacityLocalVO, AllocationVO
+        from supernote.models.file_device import AllocationVO, CapacityLocalVO
 
         mock_sn.device.note_to_png = AsyncMock()
         mock_sn.device.get_note_png_pages = AsyncMock()

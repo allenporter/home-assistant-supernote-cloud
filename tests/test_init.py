@@ -1,31 +1,27 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
-from homeassistant.core import HomeAssistant
+from homeassistant.components.media_player.errors import BrowseError
+from homeassistant.components.media_source.helper import async_browse_media
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import (
+    CONF_ACCESS_TOKEN,
+    CONF_PASSWORD,
+    CONF_UNIQUE_ID,
+    CONF_USERNAME,
+)
+from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
-
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
 )
-
 from supernote.client.exceptions import UnauthorizedException
-from custom_components.supernote_cloud.const import DOMAIN
-from homeassistant.components.media_source.helper import async_browse_media
-from homeassistant.components.media_player.errors import BrowseError
 
-
-from homeassistant.const import (
-    CONF_ACCESS_TOKEN,
-    CONF_UNIQUE_ID,
-    CONF_PASSWORD,
-    CONF_USERNAME,
-)
-from homeassistant.util import dt as dt_util
 from custom_components.supernote_cloud.const import (
-    CONF_TOKEN_TIMESTAMP,
     CONF_API_USERNAME,
+    CONF_TOKEN_TIMESTAMP,
+    DOMAIN,
 )
 
 

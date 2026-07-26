@@ -1,28 +1,27 @@
 """Tests for the config flow."""
 
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from freezegun import freeze_time
-
 from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.core import HomeAssistant
 from homeassistant.const import (
-    CONF_USERNAME,
-    CONF_PASSWORD,
     CONF_ACCESS_TOKEN,
+    CONF_PASSWORD,
     CONF_UNIQUE_ID,
+    CONF_USERNAME,
 )
-
-from custom_components.supernote_cloud.const import (
-    DOMAIN,
-    CONF_API_USERNAME,
-    CONF_TOKEN_TIMESTAMP,
-    CONF_HOST,
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
 )
 from supernote.client.exceptions import ApiException, SmsVerificationRequired
 
-from pytest_homeassistant_custom_component.common import (
-    MockConfigEntry,
+from custom_components.supernote_cloud.const import (
+    CONF_API_USERNAME,
+    CONF_HOST,
+    CONF_TOKEN_TIMESTAMP,
+    DOMAIN,
 )
 
 from .conftest import CONFIG_ENTRY_ID
