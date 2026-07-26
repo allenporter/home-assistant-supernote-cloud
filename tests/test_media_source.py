@@ -1,32 +1,31 @@
 """Test the Supernote Cloud media source."""
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock
 from http import HTTPStatus
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from homeassistant.components.media_player.errors import BrowseError
 from homeassistant.components.media_source import (
     URI_SCHEME,
     async_browse_media,
     async_resolve_media,
 )
-from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
-
-from custom_components.supernote_cloud.const import DOMAIN
-from supernote.client.exceptions import ApiException
-from supernote.models.base import BooleanEnum
-from supernote.models.file_web import UserFileVO, PngPageVO, PngVO, FilePathQueryVO
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
+from supernote.client.exceptions import ApiException
+from supernote.models.base import BooleanEnum
+from supernote.models.file_web import FilePathQueryVO, PngPageVO, PngVO, UserFileVO
+
+from custom_components.supernote_cloud.const import DOMAIN
 
 from .conftest import CONFIG_ENTRY_ID, CONFIG_ENTRY_TITLE
 
 SOURCE_TITLE = "Supernote Cloud"
 ROOT_FOLDER_PATH = f"{CONFIG_ENTRY_ID}/f/0"
-CONTENT_BYTES = "some-content".encode("utf-8")
+CONTENT_BYTES = b"some-content"
 
 
 @pytest.fixture(autouse=True)
