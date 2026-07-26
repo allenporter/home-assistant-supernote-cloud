@@ -22,8 +22,8 @@ from supernote.client.api import Supernote
 from supernote.client.exceptions import ApiException, UnauthorizedException
 from supernote.models.base import BooleanEnum
 
-from . import SupernoteCloudConfigEntry
 from .const import DOMAIN
+from .types import SupernoteCloudConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
