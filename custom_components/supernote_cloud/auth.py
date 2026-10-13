@@ -1,6 +1,6 @@
 """Supernote Cloud Auth."""
 
-import datetime
+import datetime as dt
 import logging
 from typing import cast
 
@@ -46,9 +46,7 @@ class ConfigEntryAuth(AbstractAuth):
 
     def is_expired(self) -> bool:
         token_timestamp = self._entry.options.get(CONF_TOKEN_TIMESTAMP, 0)
-        token_ts = datetime.datetime.fromtimestamp(
-            int(token_timestamp), tz=datetime.UTC
-        )
+        token_ts = dt.datetime.fromtimestamp(int(token_timestamp), tz=dt.UTC)
         now = dt_util.now()
         age = now - token_ts
         return age > TOKEN_LIFETIME
