@@ -1,7 +1,6 @@
 """LLM APIs for Supernote Cloud."""
 
 import logging
-from typing import cast
 
 import slugify
 import voluptuous as vol
@@ -95,21 +94,18 @@ class SearchTool(Tool):
         except Exception as err:  # noqa: BLE001
             return {"error": f"Error searching Supernote: {err}"}
 
-        return cast(
-            JsonObjectType,
-            {
-                "results": [
-                    {
-                        "file_name": r.file_name,
-                        "page_index": r.page_index,
-                        "text_preview": r.text_preview,
-                        "score": r.score,
-                        "date": r.date,
-                    }
-                    for r in results.results
-                ]
-            },
-        )
+        return {
+            "results": [
+                {
+                    "file_name": r.file_name,
+                    "page_index": r.page_index,
+                    "text_preview": r.text_preview,
+                    "score": r.score,
+                    "date": r.date,
+                }
+                for r in results.results
+            ]
+        }
 
 
 class TranscriptTool(Tool):
@@ -159,12 +155,9 @@ class TranscriptTool(Tool):
         except Exception as err:  # noqa: BLE001
             return {"error": f"Error fetching Supernote transcript: {err}"}
 
-        return cast(
-            JsonObjectType,
-            {
-                "transcript": result.transcript,
-            },
-        )
+        return {
+            "transcript": result.transcript,
+        }
 
 
 class SupernoteLLMApi(API):

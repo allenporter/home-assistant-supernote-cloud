@@ -263,6 +263,7 @@ class SupernoteCloudMediaSource(MediaSource):
             identifier = SupernoteIdentifier.of(item.identifier)
         except ValueError as err:
             raise BrowseError(f"Could not parse identifier: {item.identifier}") from err
+        assert ItemContentView.url is not None
         return PlayMedia(
             url=ItemContentView.url.format(item_identifier=identifier.encode()),
             mime_type="image/png",

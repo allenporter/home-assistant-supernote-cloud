@@ -125,7 +125,7 @@ class SupernoteStorageSensor(
         )
 
     @property
-    def native_value(self) -> float | None:
+    def native_value(self) -> float | None:  # ty: ignore[invalid-property-type-override]
         """Return the value reported by the sensor."""
         data = self.coordinator.data
         if not data:
