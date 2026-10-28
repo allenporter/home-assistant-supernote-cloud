@@ -2,8 +2,8 @@
 
 import logging
 
+import probatio as vol
 import slugify
-import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
