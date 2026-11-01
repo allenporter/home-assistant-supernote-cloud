@@ -105,7 +105,7 @@ class SupernoteStorageSensor(
 ):
     """Represents a Supernote storage sensor."""
 
-    entity_description: SupernoteSensorEntityDescription
+    entity_description: SupernoteSensorEntityDescription  # ty: ignore[invalid-mutable-override]
 
     def __init__(
         self,
