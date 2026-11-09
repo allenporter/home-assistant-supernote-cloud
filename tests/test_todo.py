@@ -7,11 +7,19 @@ from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp import ClientConnectionError
+from freezegun import freeze_time
 from homeassistant.components.todo import (
-    DOMAIN as TODO_DOMAIN,
+    ATTR_DESCRIPTION,
+    ATTR_DUE_DATE,
+    ATTR_DUE_DATETIME,
+    ATTR_ITEM,
+    ATTR_RENAME,
+    ATTR_STATUS,
+    TodoItemStatus,
+    TodoServices,
 )
 from homeassistant.components.todo import (
-    TodoServices,
+    DOMAIN as TODO_DOMAIN,
 )
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import (
@@ -24,14 +32,21 @@ from homeassistant.const import (
     Platform,
 )
 from homeassistant.core import Event, HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from supernote.client.exceptions import UnauthorizedException
+from supernote.client.exceptions import (
+    ApiException,
+    NotFoundException,
+    UnauthorizedException,
+)
 from supernote.models.base import BooleanEnum
 from supernote.models.schedule import (
+    AddScheduleTaskVO,
     ScheduleTaskGroupItem,
     ScheduleTaskInfo,
+    UpdateScheduleTaskVO,
 )
 
 from custom_components.supernote_cloud.const import (
@@ -201,6 +216,255 @@ async def test_todo_lists_loaded_and_items(
             "completed": "2026-11-05T18:00:00+00:00",
         },
     ]
+
+
+@pytest.mark.usefixtures("setup_integration")
+async def test_create_todo_item_inbox_and_group(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_schedule: AsyncMock,
+) -> None:
+    """Test creating todo items in Inbox and in a custom task group."""
+    await hass.config.async_set_time_zone("UTC")
+
+    mock_schedule.list_groups.return_value.__aiter__.return_value = [
+        ScheduleTaskGroupItem(task_list_id="group-1", title="Personal"),
+    ]
+    await config_entry.runtime_data.todo_coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    mock_schedule.create_task.return_value = AddScheduleTaskVO(
+        success=True, task_id="new-inbox-task"
+    )
+
+    # Create item in Inbox with due_date and description
+    await hass.services.async_call(
+        TODO_DOMAIN,
+        TodoServices.ADD_ITEM,
+        {
+            ATTR_ENTITY_ID: "todo.supernote_user_name_inbox",
+            ATTR_ITEM: "Buy nibs",
+            ATTR_DESCRIPTION: "FeelWrite 2 replacement",
+            ATTR_DUE_DATE: "2026-11-15",
+        },
+        blocking=True,
+    )
+
+    expected_due_date_ms = int(
+        dt.datetime(2026, 11, 15, 0, 0, tzinfo=dt.UTC).timestamp() * 1000
+    )
+    mock_schedule.create_task.assert_awaited_once_with(
+        group_id=None,
+        title="Buy nibs",
+        detail="FeelWrite 2 replacement",
+        status="needsAction",
+        due_time=expected_due_date_ms,
+        completed_time_ms=None,
+    )
+
+    # Create item in Personal group with due_datetime
+    mock_schedule.create_task.reset_mock()
+    await hass.services.async_call(
+        TODO_DOMAIN,
+        TodoServices.ADD_ITEM,
+        {
+            ATTR_ENTITY_ID: "todo.supernote_user_name_personal",
+            ATTR_ITEM: "Doctor appointment",
+            ATTR_DUE_DATETIME: "2026-11-20T09:15:00+00:00",
+        },
+        blocking=True,
+    )
+
+    expected_due_dt_ms = int(
+        dt.datetime(2026, 11, 20, 9, 15, tzinfo=dt.UTC).timestamp() * 1000
+    )
+    mock_schedule.create_task.assert_awaited_once_with(
+        group_id="group-1",
+        title="Doctor appointment",
+        detail=None,
+        status="needsAction",
+        due_time=expected_due_dt_ms,
+        completed_time_ms=None,
+    )
+
+
+@freeze_time("2026-11-07 20:00:00+00:00")
+@pytest.mark.usefixtures("setup_integration")
+async def test_update_todo_item(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_schedule: AsyncMock,
+) -> None:
+    """Test updating, completing, reopening, and clearing fields on a todo item."""
+    await hass.config.async_set_time_zone("UTC")
+
+    initial_due_ms = int(
+        dt.datetime(2026, 11, 10, 0, 0, tzinfo=dt.UTC).timestamp() * 1000
+    )
+    mock_schedule.list_tasks.return_value.__aiter__.return_value = [
+        ScheduleTaskInfo(
+            task_id="task-1",
+            task_list_id=None,
+            title="Draft proposal",
+            detail="Initial notes",
+            status="needsAction",
+            due_time=initial_due_ms,
+        )
+    ]
+    await config_entry.runtime_data.todo_coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    mock_schedule.update_task.return_value = UpdateScheduleTaskVO(
+        success=True, task_id="task-1"
+    )
+
+    # 1. Mark item completed and rename it
+    now_ms = int(dt_util.utcnow().timestamp() * 1000)
+    await hass.services.async_call(
+        TODO_DOMAIN,
+        TodoServices.UPDATE_ITEM,
+        {
+            ATTR_ENTITY_ID: "todo.supernote_user_name_inbox",
+            ATTR_ITEM: "task-1",
+            ATTR_RENAME: "Final proposal",
+            ATTR_STATUS: TodoItemStatus.COMPLETED,
+        },
+        blocking=True,
+    )
+
+    mock_schedule.update_task.assert_awaited_once_with(
+        task_id="task-1",
+        title="Final proposal",
+        detail="Initial notes",
+        status="completed",
+        due_time=initial_due_ms,
+        completed_time_ms=now_ms,
+    )
+
+    # Simulate updated task on server and test preserving completed_time when editing description
+    mock_schedule.list_tasks.return_value.__aiter__.return_value = [
+        ScheduleTaskInfo(
+            task_id="task-1",
+            task_list_id=None,
+            title="Final proposal",
+            detail="Initial notes",
+            status="completed",
+            due_time=initial_due_ms,
+            completed_time=1700000000000,
+        )
+    ]
+    await config_entry.runtime_data.todo_coordinator.async_refresh()
+    await hass.async_block_till_done()
+    mock_schedule.update_task.reset_mock()
+
+    # 2. Clear due date and clear description while keeping completed
+    await hass.services.async_call(
+        TODO_DOMAIN,
+        TodoServices.UPDATE_ITEM,
+        {
+            ATTR_ENTITY_ID: "todo.supernote_user_name_inbox",
+            ATTR_ITEM: "task-1",
+            ATTR_DESCRIPTION: None,
+            ATTR_DUE_DATE: None,
+        },
+        blocking=True,
+    )
+    mock_schedule.update_task.assert_awaited_once_with(
+        task_id="task-1",
+        title="Final proposal",
+        detail="",
+        status="completed",
+        due_time=0,
+        completed_time_ms=1700000000000,
+    )
+
+    # 3. Mark back to needs_action -> completed_time_ms resets to 0
+    mock_schedule.update_task.reset_mock()
+    await hass.services.async_call(
+        TODO_DOMAIN,
+        TodoServices.UPDATE_ITEM,
+        {
+            ATTR_ENTITY_ID: "todo.supernote_user_name_inbox",
+            ATTR_ITEM: "task-1",
+            ATTR_STATUS: TodoItemStatus.NEEDS_ACTION,
+        },
+        blocking=True,
+    )
+    mock_schedule.update_task.assert_awaited_once_with(
+        task_id="task-1",
+        title="Final proposal",
+        detail="Initial notes",
+        status="needsAction",
+        due_time=initial_due_ms,
+        completed_time_ms=0,
+    )
+
+
+@pytest.mark.usefixtures("setup_integration")
+async def test_delete_todo_items_and_partial_failure_refresh(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_schedule: AsyncMock,
+) -> None:
+    """Test removing completed items (ignoring 404 and refreshing on partial failure)."""
+    mock_schedule.list_tasks.return_value.__aiter__.return_value = [
+        ScheduleTaskInfo(
+            task_id="task-active",
+            task_list_id=None,
+            title="Active",
+            status="needsAction",
+        ),
+        ScheduleTaskInfo(
+            task_id="task-done-1",
+            task_list_id=None,
+            title="Done 1",
+            status="completed",
+            completed_time=1700000000000,
+        ),
+        ScheduleTaskInfo(
+            task_id="task-done-2",
+            task_list_id=None,
+            title="Done 2",
+            status="completed",
+            completed_time=1700000000000,
+        ),
+    ]
+    await config_entry.runtime_data.todo_coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    # Simulate one 404 (already deleted) and one normal delete
+    mock_schedule.delete_task.side_effect = [NotFoundException("Not found"), None]
+
+    await hass.services.async_call(
+        TODO_DOMAIN,
+        TodoServices.REMOVE_COMPLETED_ITEMS,
+        {ATTR_ENTITY_ID: "todo.supernote_user_name_inbox"},
+        blocking=True,
+    )
+
+    assert [call.args[0] for call in mock_schedule.delete_task.await_args_list] == [
+        "task-done-1",
+        "task-done-2",
+    ]
+
+    # Now test partial failure: first delete succeeds, second raises ClientConnectionError
+    mock_schedule.delete_task.reset_mock()
+    mock_schedule.list_groups.reset_mock()
+    mock_schedule.delete_task.side_effect = [
+        None,
+        ClientConnectionError("Connection reset"),
+    ]
+
+    with pytest.raises(HomeAssistantError, match="Error deleting Supernote to-do item"):
+        await hass.services.async_call(
+            TODO_DOMAIN,
+            TodoServices.REMOVE_COMPLETED_ITEMS,
+            {ATTR_ENTITY_ID: "todo.supernote_user_name_inbox"},
+            blocking=True,
+        )
+
+    # Coordinator still refreshed because item 1 was deleted on the server
+    assert mock_schedule.list_groups.called
 
 
 @pytest.mark.usefixtures("setup_integration")
@@ -384,6 +648,71 @@ async def test_stale_group_removed_on_startup(
 
     assert ent_reg.async_get(stale_reg_entry.entity_id) is None
     assert hass.states.get("todo.supernote_user_name_inbox") is not None
+
+
+@pytest.mark.usefixtures("setup_integration")
+async def test_todo_service_errors_and_reauth(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_schedule: AsyncMock,
+) -> None:
+    """Test API errors raise HomeAssistantError and auth errors trigger reauth."""
+    mock_schedule.list_tasks.return_value.__aiter__.return_value = [
+        ScheduleTaskInfo(
+            task_id="task-1",
+            task_list_id=None,
+            title="Item 1",
+            status="needsAction",
+        )
+    ]
+    await config_entry.runtime_data.todo_coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    # API error on create
+    mock_schedule.create_task.side_effect = ApiException("Server 500")
+    with pytest.raises(HomeAssistantError, match="Error creating Supernote to-do item"):
+        await hass.services.async_call(
+            TODO_DOMAIN,
+            TodoServices.ADD_ITEM,
+            {
+                ATTR_ENTITY_ID: "todo.supernote_user_name_inbox",
+                ATTR_ITEM: "Fail item",
+            },
+            blocking=True,
+        )
+
+    # API error on update
+    mock_schedule.update_task.side_effect = ApiException("Server 500")
+    with pytest.raises(HomeAssistantError, match="Error updating Supernote to-do item"):
+        await hass.services.async_call(
+            TODO_DOMAIN,
+            TodoServices.UPDATE_ITEM,
+            {
+                ATTR_ENTITY_ID: "todo.supernote_user_name_inbox",
+                ATTR_ITEM: "task-1",
+                ATTR_STATUS: TodoItemStatus.COMPLETED,
+            },
+            blocking=True,
+        )
+
+    # Unauthorized error on delete triggers reauth
+    mock_schedule.delete_task.side_effect = UnauthorizedException("Token invalid")
+    with pytest.raises(HomeAssistantError, match="Supernote authentication failed"):
+        await hass.services.async_call(
+            TODO_DOMAIN,
+            TodoServices.REMOVE_ITEM,
+            {
+                ATTR_ENTITY_ID: "todo.supernote_user_name_inbox",
+                ATTR_ITEM: ["task-1"],
+            },
+            blocking=True,
+        )
+
+    await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress()
+    assert len(flows) == 1
+    assert flows[0]["handler"] == DOMAIN
+    assert flows[0]["context"]["source"] == "reauth"
 
 
 async def test_todo_coordinator_setup_errors(
