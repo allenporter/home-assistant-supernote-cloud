@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import override
 
+from aiohttp import ClientError
 from homeassistant.components.todo import (
     DOMAIN as TODO_DOMAIN,
 )
@@ -12,14 +13,25 @@ from homeassistant.components.todo import (
     TodoItem,
     TodoItemStatus,
     TodoListEntity,
+    TodoListEntityFeature,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    HomeAssistantError,
+    ServiceValidationError,
+)
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
+from supernote.client.exceptions import (
+    NotFoundException,
+    SupernoteException,
+    UnauthorizedException,
+)
 from supernote.models.schedule import ScheduleTaskInfo
 
 from .const import DOMAIN
@@ -33,6 +45,10 @@ INBOX_KEY = "inbox"
 TODO_STATUS_MAP: dict[str, TodoItemStatus] = {
     "needsAction": TodoItemStatus.NEEDS_ACTION,
     "completed": TodoItemStatus.COMPLETED,
+}
+TODO_STATUS_MAP_INV: dict[TodoItemStatus, str] = {
+    TodoItemStatus.NEEDS_ACTION: "needsAction",
+    TodoItemStatus.COMPLETED: "completed",
 }
 
 
@@ -48,6 +64,13 @@ def _is_inbox_task(task: ScheduleTaskInfo, known_groups: set[str]) -> bool:
     if not task.task_list_id:
         return True
     return task.task_list_id == "0" and "0" not in known_groups
+
+
+def _due_to_ms(due: dt.date | dt.datetime) -> int:
+    """Convert a TodoItem due date or datetime into UTC epoch milliseconds."""
+    if isinstance(due, dt.datetime):
+        return int(dt_util.as_utc(due).timestamp() * 1000)
+    return int(dt_util.as_utc(dt_util.start_of_local_day(due)).timestamp() * 1000)
 
 
 def _ms_to_datetime(ms: int | None) -> dt.datetime | None:
@@ -169,6 +192,14 @@ class SupernoteTodoListEntity(
     """Representation of a Supernote Cloud To-do list."""
 
     _attr_has_entity_name = True
+    _attr_supported_features = (
+        TodoListEntityFeature.CREATE_TODO_ITEM
+        | TodoListEntityFeature.UPDATE_TODO_ITEM
+        | TodoListEntityFeature.DELETE_TODO_ITEM
+        | TodoListEntityFeature.SET_DUE_DATE_ON_ITEM
+        | TodoListEntityFeature.SET_DUE_DATETIME_ON_ITEM
+        | TodoListEntityFeature.SET_DESCRIPTION_ON_ITEM
+    )
 
     def __init__(
         self,
@@ -234,3 +265,131 @@ class SupernoteTodoListEntity(
             return
         self._sync_from_coordinator()
         super()._handle_coordinator_update()
+
+    @override
+    async def async_create_todo_item(self, item: TodoItem) -> None:
+        """Create a To-do item in Supernote Cloud."""
+        title = (item.summary or "").strip()
+        if not title:
+            raise ServiceValidationError("To-do item summary cannot be empty")
+
+        status_str = TODO_STATUS_MAP_INV.get(
+            item.status or TodoItemStatus.NEEDS_ACTION,
+            "needsAction",
+        )
+        due_time = _due_to_ms(item.due) if item.due is not None else None
+        completed_time_ms = (
+            int(dt_util.utcnow().timestamp() * 1000)
+            if item.status == TodoItemStatus.COMPLETED
+            else None
+        )
+        try:
+            await self.coordinator.schedule.create_task(
+                group_id=self._group_id,
+                title=title,
+                detail=item.description,
+                status=status_str,
+                due_time=due_time,
+                completed_time_ms=completed_time_ms,
+            )
+        except ConfigEntryAuthFailed:
+            raise
+        except UnauthorizedException as err:
+            self.coordinator.entry.async_start_reauth(self.hass)
+            raise HomeAssistantError(f"Supernote authentication failed: {err}") from err
+        except (SupernoteException, ClientError, TimeoutError) as err:
+            raise HomeAssistantError(
+                f"Error creating Supernote to-do item: {err}"
+            ) from err
+
+        await self.coordinator.async_refresh()
+
+    @override
+    async def async_update_todo_item(self, item: TodoItem) -> None:
+        """Update a To-do item in Supernote Cloud."""
+        if not item.uid:
+            raise ServiceValidationError("Cannot update To-do item without UID")
+        title = (item.summary or "").strip()
+        if not title:
+            raise ServiceValidationError("To-do item summary cannot be empty")
+
+        uid = item.uid
+        existing = (
+            next(
+                (t for t in self.coordinator.data.tasks if t.task_id == uid),
+                None,
+            )
+            if self.coordinator.data
+            else None
+        )
+
+        status_str = TODO_STATUS_MAP_INV.get(
+            item.status or TodoItemStatus.NEEDS_ACTION,
+            "needsAction",
+        )
+        if item.status == TodoItemStatus.COMPLETED:
+            if (
+                existing
+                and existing.status == "completed"
+                and existing.completed_time
+                and existing.completed_time > 0
+            ):
+                completed_time_ms = existing.completed_time
+            else:
+                completed_time_ms = int(dt_util.utcnow().timestamp() * 1000)
+        else:
+            completed_time_ms = 0
+
+        due_time = _due_to_ms(item.due) if item.due is not None else 0
+
+        try:
+            await self.coordinator.schedule.update_task(
+                task_id=uid,
+                title=title,
+                detail=item.description or "",
+                status=status_str,
+                due_time=due_time,
+                completed_time_ms=completed_time_ms,
+            )
+        except ConfigEntryAuthFailed:
+            raise
+        except UnauthorizedException as err:
+            self.coordinator.entry.async_start_reauth(self.hass)
+            raise HomeAssistantError(f"Supernote authentication failed: {err}") from err
+        except (SupernoteException, ClientError, TimeoutError) as err:
+            raise HomeAssistantError(
+                f"Error updating Supernote to-do item: {err}"
+            ) from err
+
+        await self.coordinator.async_refresh()
+
+    @override
+    async def async_delete_todo_items(self, uids: list[str]) -> None:
+        """Delete To-do items from Supernote Cloud."""
+        deleted_any = False
+        try:
+            for uid in uids:
+                if not uid:
+                    continue
+                try:
+                    await self.coordinator.schedule.delete_task(uid)
+                except NotFoundException:
+                    pass
+                deleted_any = True
+        except ConfigEntryAuthFailed:
+            if deleted_any:
+                await self.coordinator.async_refresh()
+            raise
+        except UnauthorizedException as err:
+            if deleted_any:
+                await self.coordinator.async_refresh()
+            self.coordinator.entry.async_start_reauth(self.hass)
+            raise HomeAssistantError(f"Supernote authentication failed: {err}") from err
+        except (SupernoteException, ClientError, TimeoutError) as err:
+            if deleted_any:
+                await self.coordinator.async_refresh()
+            raise HomeAssistantError(
+                f"Error deleting Supernote to-do item: {err}"
+            ) from err
+
+        await self.coordinator.async_refresh()
