@@ -89,9 +89,19 @@ async def mock_config_entry(
     return config_entry
 
 
+@pytest.fixture(name="mock_schedule")
+def mock_schedule_fixture() -> Generator[AsyncMock]:
+    """Mock the Supernote ScheduleClient."""
+    with patch(
+        "supernote.client.schedule.ScheduleClient", autospec=True
+    ) as mock_sched_cls:
+        yield mock_sched_cls.return_value
+
+
 @pytest.fixture(name="mock_supernote")
-def mock_supernote_fixture() -> Generator[AsyncMock]:
+def mock_supernote_fixture(mock_schedule: AsyncMock) -> Generator[AsyncMock]:
     """Mock the Supernote client."""
+    _ = mock_schedule
     # Force reload of the component modules to ensure they pick up the patch
     for module in list(sys.modules.keys()):
         if module.startswith("custom_components.supernote_cloud"):

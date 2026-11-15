@@ -36,5 +36,12 @@
       "api_error": "Error talking to Supernote Cloud API.",
       "invalid_auth": "Invalid verification code."
     }
+  },
+  "entity": {
+    "todo": {
+      "inbox": {
+        "name": "Inbox"
+      }
+    }
   }
 }

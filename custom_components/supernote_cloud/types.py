@@ -7,7 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from supernote.client.api import Supernote
 
 if TYPE_CHECKING:
-    from .coordinator import SupernoteStorageCoordinator
+    from .coordinator import SupernoteStorageCoordinator, SupernoteTodoCoordinator
 
 
 @dataclass
@@ -16,6 +16,7 @@ class SupernoteCloudData:
 
     client: Supernote
     coordinator: SupernoteStorageCoordinator
+    todo_coordinator: SupernoteTodoCoordinator
 
 
 type SupernoteCloudConfigEntry = ConfigEntry[SupernoteCloudData]
