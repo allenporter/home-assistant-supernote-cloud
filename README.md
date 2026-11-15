@@ -26,6 +26,13 @@ Exposes your notebook library via Home Assistant's native **Media Browser**.
 - Browse folders and files synced from your tablet.
 - View notebook pages rendered dynamically on-the-fly as `.png` images directly in the Home Assistant UI or cast them to media players.
 
+### ✅ To-Do Lists
+
+Synchronizes your Supernote To-Do lists directly with Home Assistant's native **To-do** integration (and Home Assistant Assist):
+
+- Exposes your default **Inbox** as well as custom Supernote task lists, automatically discovering newly created lists and removing deleted ones.
+- View, create, rename, complete/reopen, and delete tasks with support for descriptions, due dates, and due datetimes.
+
 ### 📊 Storage Capacity Sensors
 
 Keep track of your cloud account's storage capacity. The integration registers four sensors polled automatically every 30 minutes:
