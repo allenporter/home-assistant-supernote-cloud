@@ -8,6 +8,7 @@ from homeassistant.helpers import llm
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from supernote.client.exceptions import UnauthorizedException
 from supernote.models.extended import (
+    PageTranscriptVO,
     SearchResultVO,
     WebSearchResponseVO,
     WebTranscriptResponseVO,
@@ -105,7 +106,16 @@ async def test_transcript_tool_call_success(
 ):
     """Test calling the transcript tool successfully."""
     # Setup mock response
-    mock_response = WebTranscriptResponseVO(transcript="This is the full transcript.")
+    mock_response = WebTranscriptResponseVO(
+        pages=[
+            PageTranscriptVO(
+                page_index=0,
+                page_id="page_0",
+                text="This is the full transcript.",
+                date="2023-10-27",
+            )
+        ]
+    )
 
     # Configure post_json to return the response
     mock_supernote.client.post_json = AsyncMock(return_value=mock_response)
@@ -117,14 +127,20 @@ async def test_transcript_tool_call_success(
     result = await transcript_tool.async_call(hass, tool_input, AsyncMock())
 
     assert result == {
-        "transcript": "This is the full transcript.",
+        "pages": [
+            {
+                "page_index": 0,
+                "text": "This is the full transcript.",
+                "date": "2023-10-27",
+            }
+        ],
     }
 
     # Verify post_json call
     mock_supernote.client.post_json.assert_called_once()
     args, kwargs = mock_supernote.client.post_json.call_args
     assert args[0] == "/api/extended/transcript"
-    assert kwargs["json"]["fileId"] == 12345
+    assert kwargs["json"]["fileId"] == "12345"
 
 
 @pytest.mark.usefixtures("mock_supernote")
