@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import UnitOfInformation
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from supernote.client.exceptions import ApiException
+from supernote.client.exceptions import ApiException, UnauthorizedException
 from supernote.models.file_device import AllocationVO, CapacityLocalVO
 
 from custom_components.supernote_cloud.const import DOMAIN
@@ -95,6 +95,40 @@ async def test_setup_entry_not_ready(
 
     assert not await hass.config_entries.async_setup(config_entry.entry_id)
     assert config_entry.state is ConfigEntryState.SETUP_RETRY
+
+
+@pytest.mark.usefixtures("mock_supernote")
+async def test_setup_entry_unauthorized_triggers_reauth(
+    hass: HomeAssistant,
+    mock_supernote: MagicMock,
+) -> None:
+    """Test config entry setup triggers reauth when get_capacity raises UnauthorizedException."""
+    mock_supernote.device.get_capacity.side_effect = UnauthorizedException(
+        "Token expired"
+    )
+
+    config_entry = MockConfigEntry(
+        unique_id=CONFIG_ENTRY_ID,
+        title="user-name",
+        domain=DOMAIN,
+        options={
+            "access_token": "access-token-1",
+            "token_timestamp": 1609502400,
+            "unique_id": CONFIG_ENTRY_ID,
+            "username": "user-name",
+            "password": "some-password",
+        },
+    )
+    config_entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(config_entry.entry_id)
+    assert config_entry.state is ConfigEntryState.SETUP_ERROR
+
+    await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress()
+    assert len(flows) == 1
+    assert flows[0]["handler"] == DOMAIN
+    assert flows[0]["context"]["source"] == "reauth"
 
 
 @pytest.mark.usefixtures("setup_integration")

@@ -3,10 +3,12 @@
 import logging
 from datetime import timedelta
 
+from aiohttp import ClientError
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from supernote.client.api import Supernote
-from supernote.client.exceptions import ApiException
+from supernote.client.exceptions import SupernoteException, UnauthorizedException
 from supernote.models.file_device import CapacityLocalVO
 
 from .const import DOMAIN
@@ -34,6 +36,7 @@ class SupernoteStorageCoordinator(DataUpdateCoordinator[CapacityLocalVO]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name=f"{DOMAIN}_storage_{entry.title}",
             update_interval=UPDATE_INTERVAL,
         )
@@ -44,5 +47,16 @@ class SupernoteStorageCoordinator(DataUpdateCoordinator[CapacityLocalVO]):
         """Fetch storage data from API."""
         try:
             return await self.client.device.get_capacity()
-        except ApiException as err:
+        except ConfigEntryAuthFailed:
+            raise
+        except UnauthorizedException as err:
+            raise ConfigEntryAuthFailed(
+                f"Authentication failed fetching storage capacity: {err}"
+            ) from err
+        except (
+            SupernoteException,
+            HomeAssistantError,
+            ClientError,
+            TimeoutError,
+        ) as err:
             raise UpdateFailed(f"Error fetching storage capacity: {err}") from err

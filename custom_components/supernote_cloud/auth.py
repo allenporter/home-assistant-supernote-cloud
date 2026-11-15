@@ -1,5 +1,6 @@
 """Supernote Cloud Auth."""
 
+import asyncio
 import datetime as dt
 import logging
 from typing import cast
@@ -37,11 +38,14 @@ class ConfigEntryAuth(AbstractAuth):
         self._session = session
         host = entry.options.get(CONF_HOST, DEFAULT_HOST)
         self._login_client = LoginClient(Client(session, host=host))
+        self._refresh_lock = asyncio.Lock()
 
     async def async_get_access_token(self) -> str:
         """Return a valid access token."""
         if self.is_expired():
-            await self._refresh_access_token()
+            async with self._refresh_lock:
+                if self.is_expired():
+                    await self._refresh_access_token()
         return cast(str, self._entry.options[CONF_ACCESS_TOKEN])
 
     def is_expired(self) -> bool:
