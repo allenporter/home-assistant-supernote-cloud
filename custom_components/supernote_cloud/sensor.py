@@ -105,7 +105,7 @@ class SupernoteStorageSensor(
 ):
     """Represents a Supernote storage sensor."""
 
-    entity_description: SupernoteSensorEntityDescription  # ty: ignore[invalid-mutable-override]
+    entity_description: SupernoteSensorEntityDescription  # ty: ignore[incompatible-mutable-override]
 
     def __init__(
         self,
@@ -125,7 +125,7 @@ class SupernoteStorageSensor(
         )
 
     @property
-    def native_value(self) -> float | None:  # ty: ignore[invalid-property-type-override]
+    def native_value(self) -> float | None:  # ty: ignore[incompatible-property-override]
         """Return the value reported by the sensor."""
         data = self.coordinator.data
         if not data:
