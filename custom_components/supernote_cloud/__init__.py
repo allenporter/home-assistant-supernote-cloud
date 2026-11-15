@@ -7,10 +7,11 @@ import logging
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
+from supernote.client.schedule import ScheduleClient
 
 from .api import async_get_supernote_client
 from .const import DOMAIN
-from .coordinator import SupernoteStorageCoordinator
+from .coordinator import SupernoteStorageCoordinator, SupernoteTodoCoordinator
 from .llm import async_register_llm_apis
 from .media_source import async_register_http_views
 from .types import SupernoteCloudConfigEntry, SupernoteCloudData
@@ -19,7 +20,7 @@ __all__ = ["DOMAIN"]
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.TODO]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -35,9 +36,15 @@ async def async_setup_entry(
     sn = await async_get_supernote_client(hass, entry)
 
     coordinator = SupernoteStorageCoordinator(hass, entry, sn)
+    todo_coordinator = SupernoteTodoCoordinator(hass, entry, ScheduleClient(sn.client))
     await coordinator.async_config_entry_first_refresh()
+    await todo_coordinator.async_config_entry_first_refresh()
 
-    entry.runtime_data = SupernoteCloudData(client=sn, coordinator=coordinator)
+    entry.runtime_data = SupernoteCloudData(
+        client=sn,
+        coordinator=coordinator,
+        todo_coordinator=todo_coordinator,
+    )
 
     await hass.config_entries.async_forward_entry_setups(
         entry,
