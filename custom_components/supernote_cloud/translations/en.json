@@ -6,14 +6,14 @@
         "title": "Configure Supernote Cloud",
         "description": "Enter your Supernote cloud credentials (username or phone number) and password.",
         "data": {
-          "host": "Supernote Private Cloud URL",
+          "host": "Private Cloud URL",
           "username": "Username or Phone number",
           "password": "Password"
         },
         "data_description": {
-          "host": "The URL to use for the Supernote Private Cloud API. This is usually the URL of your Supernote private cloud instance.",
-          "username": "Your Supernote cloud username or phone number.",
-          "password": "Your Supernote cloud password."
+          "host": "The URL of your Open Private Cloud for Supernote or official Supernote Private Cloud server.",
+          "username": "Your cloud account username or phone number.",
+          "password": "Your cloud account password."
         }
       },
       "sms": {
