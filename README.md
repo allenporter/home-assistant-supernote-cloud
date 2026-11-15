@@ -1,11 +1,14 @@
-# Supernote Cloud Integration for Home Assistant
+# Home Assistant Integration for Supernote
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![test_suite](https://github.com/allenporter/home-assistant-supernote-cloud/actions/workflows/test.yaml/badge.svg)](https://github.com/allenporter/home-assistant-supernote-cloud/actions)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-Bring your Ratta Supernote e-ink tablet into your smart home ecosystem. This integration connects Home Assistant to a **Supernote Private Cloud**, allowing you to monitor device storage capacity, browse notebook pages dynamically, and interact with your handwritten notes using Large Language Models (LLMs) and Home Assistant Assist.
+Bring your Ratta Supernote e-ink tablet into your smart home ecosystem. This custom integration connects Home Assistant to a private cloud server for Supernote, allowing you to monitor storage capacity, manage to-do lists, browse notebook pages dynamically, and interact with your handwritten notes using Large Language Models (LLMs) and Home Assistant Assist.
 
-It is designed to pair natively with both the official [Supernote Private Cloud](https://support.supernote.com/en_US/Whats-New/setting-up-your-own-supernote-private-cloud-beta) and your own self-hosted **[Supernote Personal Knowledge Hub](https://github.com/allenporter/supernote)** with built-in AI features (such as notebook transcription and semantic search).
+It is designed to pair natively with both the self-hosted **[Open Private Cloud for Supernote](https://github.com/allenporter/supernote)** (with optional AI features such as notebook transcription and semantic search) and the official [Supernote Private Cloud](https://support.supernote.com/en_US/Whats-New/setting-up-your-own-supernote-private-cloud-beta).
+
+> **Unofficial Community Project:** We love [Ratta](https://supernote.com/)'s products and built this integration to support the Supernote community. It is an independent, open-source project and is not affiliated with, endorsed by, or sponsored by Shanghai Ratta Smart Technology Co., Ltd. _Supernote_ and _Ratta_ are trademarks of Shanghai Ratta Smart Technology Co., Ltd.
 
 ---
 
@@ -46,12 +49,12 @@ Keep track of your cloud account's storage capacity. The integration registers f
 
 ## 🔒 Supported Cloud Options
 
-This integration supports any sync server implementing the [OpenAPI Specification](https://github.com/allenporter/supernote/tree/main/api-spec) for the Supernote Private Cloud protocol. Compatible options include:
+This integration supports any sync server implementing the community [Supernote OpenAPI Specification](https://github.com/allenporter/supernote/tree/main/api-spec) for the Private Cloud protocol. Compatible options include:
 
-- **Supernote Personal Knowledge Hub (Recommended)**: Pairs with **[allenporter/supernote](https://github.com/allenporter/supernote)**, a self-hosted, SQLite-backed private cloud server with built-in Gemini AI features.
-  - **Local Ownership**: Sync your notes directly to a local database running in your home lab, NAS, or private server.
-  - **AI Integration**: Unlocks semantic search and note transcription features for LLM tools.
-  - **Highly Efficient**: Consumes less than ~200MB of memory at idle.
+- **Open Private Cloud for Supernote (Recommended)**: Pairs with **[allenporter/supernote](https://github.com/allenporter/supernote)**, a lightweight, self-hosted Python/SQLite private cloud server with optional AI synthesis (Google Gemini or local OpenAI-compatible models such as Ollama).
+  - **Local Ownership**: Sync your notes directly to a local SQLite database running in your home lab, NAS, or private server.
+  - **AI Integration**: Unlocks semantic search and note transcription features for Home Assistant LLM tools.
+  - **Highly Efficient**: Consumes ~135MB in bare sync mode (~160MB idle with the Web UI and MCP server enabled).
 - **Official Supernote Private Cloud**: Supports Ratta's official [Supernote Private Cloud](https://support.supernote.com/en_US/Whats-New/setting-up-your-own-supernote-private-cloud-beta) sync service.
 
 ---
@@ -71,7 +74,7 @@ This integration supports any sync server implementing the [OpenAPI Specificatio
 - Go to **Settings** -> **Devices & Services** -> **Add Integration**.
 - Search for **Supernote Cloud**.
 - Enter your credentials (username/phone number and password).
-- Enter the **Supernote Private Cloud URL** of your self-hosted server (this defaults to the standard cloud URL if left unchanged).
+- Enter the **Private Cloud URL** of your self-hosted server (this defaults to the standard cloud URL if left unchanged).
 - Follow the setup flow (including entering the SMS verification code if applicable).
 
 ---
@@ -102,3 +105,9 @@ We use `pytest` for unit testing. Run the test suite:
 ```bash
 $ .venv/bin/pytest
 ```
+
+---
+
+## Acknowledgments
+
+This project is built in support of the [Ratta Supernote](https://supernote.com/) community and aims to be a complementary, open-source Home Assistant integration compatible with [Open Private Cloud for Supernote](https://github.com/allenporter/supernote) and the official [Private Cloud protocol](https://support.supernote.com/en_US/Whats-New/setting-up-your-own-supernote-private-cloud-beta).
