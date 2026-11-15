@@ -1,6 +1,7 @@
 """DataUpdateCoordinator for Supernote Cloud."""
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -31,7 +32,7 @@ class SupernoteTodoData:
     """Schedule task groups and tasks fetched from Supernote Cloud."""
 
     groups: dict[str, ScheduleTaskGroupItem]
-    tasks: list[ScheduleTaskInfo]
+    tasks_by_group: dict[str | None, list[ScheduleTaskInfo]]
 
 
 class SupernoteStorageCoordinator(DataUpdateCoordinator[CapacityLocalVO]):
@@ -121,9 +122,19 @@ class SupernoteTodoCoordinator(DataUpdateCoordinator[SupernoteTodoData]):
             for group in raw_groups
             if group.task_list_id and group.is_deleted != BooleanEnum.YES
         }
-        tasks = [
-            task
-            for task in raw_tasks
-            if task.task_id and task.is_deleted != BooleanEnum.YES
-        ]
-        return SupernoteTodoData(groups=groups, tasks=tasks)
+        tasks_by_group: dict[str | None, list[ScheduleTaskInfo]] = defaultdict(list)
+        for task in raw_tasks:
+            if not task.task_id or task.is_deleted == BooleanEnum.YES:
+                continue
+            if not task.task_list_id or (
+                task.task_list_id == "0" and "0" not in groups
+            ):
+                group_key: str | None = None
+            else:
+                group_key = task.task_list_id
+            tasks_by_group[group_key].append(task)
+
+        for group_tasks in tasks_by_group.values():
+            group_tasks.sort(key=lambda t: t.sort if t.sort else 0)
+
+        return SupernoteTodoData(groups=groups, tasks_by_group=dict(tasks_by_group))

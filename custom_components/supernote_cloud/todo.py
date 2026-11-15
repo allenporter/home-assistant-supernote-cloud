@@ -43,13 +43,6 @@ def _group_unique_id(entry_id: str, group_id: str | None) -> str:
     return f"{entry_id}_group_{group_id}"
 
 
-def _is_inbox_task(task: ScheduleTaskInfo, known_groups: set[str]) -> bool:
-    """Return True if a task belongs to the default Inbox list."""
-    if not task.task_list_id:
-        return True
-    return task.task_list_id == "0" and "0" not in known_groups
-
-
 def _ms_to_datetime(ms: int | None) -> dt.datetime | None:
     """Convert epoch milliseconds to a UTC datetime, ignoring out-of-range values."""
     if not ms or ms <= 0:
@@ -207,17 +200,7 @@ class SupernoteTodoListEntity(
         ):
             self._attr_name = group.title
 
-        known_group_ids = set(data.groups.keys())
-        matching_tasks = [
-            task
-            for task in data.tasks
-            if (
-                _is_inbox_task(task, known_group_ids)
-                if self._group_id is None
-                else task.task_list_id == self._group_id
-            )
-        ]
-        matching_tasks.sort(key=lambda t: t.sort if t.sort else 0)
+        matching_tasks = data.tasks_by_group.get(self._group_id, [])
         self._attr_todo_items = [_convert_api_task(task) for task in matching_tasks]
 
     @callback
