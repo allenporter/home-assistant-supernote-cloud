@@ -156,7 +156,14 @@ class TranscriptTool(Tool):
             return {"error": f"Error fetching Supernote transcript: {err}"}
 
         return {
-            "transcript": result.transcript,
+            "pages": [
+                {
+                    "page_index": page.page_index,
+                    "text": page.text,
+                    "date": page.date,
+                }
+                for page in result.pages
+            ],
         }
 
 
