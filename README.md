@@ -18,8 +18,8 @@ It is designed to pair natively with both the self-hosted **[Open Private Cloud 
 
 This integration registers custom tools with Home Assistant's LLM engine, enabling conversational agents (such as Google Gemini in Home Assistant) to read, search, and answer questions about your notes.
 
-- **Semantic Search (`search_supernote`)**: Allows LLMs to search for concepts across your handwritten notebook library using vector similarity search.
-- **Notebook Transcripts (`get_supernote_transcript`)**: Exposes the text transcript of any notebook or journal to the model.
+- **Semantic Search (`supernote_cloud__search`)**: Allows LLMs to search for concepts across your handwritten notebook library using vector similarity search.
+- **Notebook Transcripts (`supernote_cloud__get_transcript`)**: Exposes the text transcript of any notebook or journal to the model.
 - **LLM Agent Compatibility**: Pairs with Home Assistant LLM integrations (such as Google Gemini, Anthropic Claude, OpenAI, etc.) to query, summarize, or search your handwritten notes using natural language.
 
 ### 🖼️ Dynamic Notebook Rendering (Media Source)

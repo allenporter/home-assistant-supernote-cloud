@@ -9,6 +9,7 @@ pytest-homeassistant-custom-component==0.13.375
 syrupy>=4.6.1
 
 # Component dependencies
+gazetteer-matcher>=1.1.0
 hassil>=3.2.0
 home-assistant-intents>=2025.9.24
 supernote[client]==0.25.0
