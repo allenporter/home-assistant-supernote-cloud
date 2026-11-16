@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 import logging
+from typing import override
 
+from homeassistant.components import llm as llm_component
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.llm import (
+    API,
+    APIInstance,
+    LLMContext,
+    async_register_api,
+    selector_serializer,
+)
 from homeassistant.helpers.typing import ConfigType
 from supernote.client.schedule import ScheduleClient
 
 from .api import async_get_supernote_client
 from .const import DOMAIN
 from .coordinator import SupernoteStorageCoordinator, SupernoteTodoCoordinator
-from .llm import async_register_llm_apis
 from .media_source import async_register_http_views
 from .types import SupernoteCloudConfigEntry, SupernoteCloudData
 
@@ -21,6 +29,34 @@ __all__ = ["DOMAIN"]
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.TODO]
+
+
+class SupernoteLLMApi(API):
+    """Supernote LLM API."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: SupernoteCloudConfigEntry,
+    ) -> None:
+        """Initialize the LLM API."""
+        super().__init__(
+            hass=hass,
+            id=f"{DOMAIN}-{entry.entry_id}",
+            name=f"Supernote: {entry.title}",
+        )
+
+    @override
+    async def async_get_api_instance(self, llm_context: LLMContext) -> APIInstance:
+        """Return the instance of the API."""
+        llm_tools = await llm_component.async_get_tools(self.hass, llm_context, self.id)
+        return APIInstance(
+            api=self,
+            api_prompt=llm_tools.prompt or "",
+            llm_context=llm_context,
+            tools=llm_tools.tools,
+            custom_serializer=selector_serializer,
+        )
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -50,7 +86,7 @@ async def async_setup_entry(
         entry,
         platforms=PLATFORMS,
     )
-    await async_register_llm_apis(hass, entry)
+    entry.async_on_unload(async_register_api(hass, SupernoteLLMApi(hass, entry)))
     return True
 
 

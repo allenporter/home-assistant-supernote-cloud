@@ -3,7 +3,7 @@
   "name": "Supernote Cloud",
   "codeowners": ["@allenporter"],
   "config_flow": true,
-  "dependencies": ["http"],
+  "dependencies": ["http", "llm"],
   "documentation": "https://github.com/allenporter/home-assistant-supernote-cloud",
   "integration_type": "service",
   "iot_class": "calculated",
