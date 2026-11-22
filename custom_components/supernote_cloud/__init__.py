@@ -6,8 +6,9 @@ import logging
 from typing import override
 
 from homeassistant.components import llm as llm_component
-from homeassistant.const import Platform
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.llm import (
     API,
     APIInstance,
@@ -69,15 +70,21 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: SupernoteCloudConfigEntry
 ) -> bool:
     """Set up a config entry."""
-    sn = await async_get_supernote_client(hass, entry)
+    if not entry.options.get(CONF_USERNAME) or not entry.options.get(CONF_PASSWORD):
+        raise ConfigEntryAuthFailed("Missing credentials")
 
-    coordinator = SupernoteStorageCoordinator(hass, entry, sn)
-    todo_coordinator = SupernoteTodoCoordinator(hass, entry, ScheduleClient(sn.client))
+    sn, auth = await async_get_supernote_client(hass, entry)
+
+    coordinator = SupernoteStorageCoordinator(hass, entry, sn, auth)
+    todo_coordinator = SupernoteTodoCoordinator(
+        hass, entry, ScheduleClient(sn.client), auth
+    )
     await coordinator.async_config_entry_first_refresh()
     await todo_coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = SupernoteCloudData(
         client=sn,
+        auth=auth,
         coordinator=coordinator,
         todo_coordinator=todo_coordinator,
     )

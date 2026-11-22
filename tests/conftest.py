@@ -13,6 +13,7 @@ from homeassistant.const import (
     CONF_ACCESS_TOKEN,
     CONF_PASSWORD,
     CONF_UNIQUE_ID,
+    CONF_USERNAME,
     Platform,
 )
 from homeassistant.core import HomeAssistant
@@ -76,6 +77,7 @@ async def mock_config_entry(
         title=CONFIG_ENTRY_TITLE,
         domain=DOMAIN,
         options={
+            CONF_USERNAME: "user-name",
             CONF_ACCESS_TOKEN: "access-token-1",
             CONF_TOKEN_TIMESTAMP: dt_util.now().timestamp(),
             CONF_UNIQUE_ID: CONFIG_ENTRY_ID,
@@ -98,10 +100,25 @@ def mock_schedule_fixture() -> Generator[AsyncMock]:
         yield mock_sched_cls.return_value
 
 
+@pytest.fixture(name="mock_login")
+def mock_login_fixture() -> Generator[AsyncMock]:
+    """Mock LoginClient.login so reactive token refreshes do not hit the network."""
+    with patch(
+        "supernote.client.login_client.LoginClient.login",
+        new_callable=AsyncMock,
+        return_value="refreshed-access-token",
+    ) as mock_login:
+        yield mock_login
+
+
 @pytest.fixture(name="mock_supernote")
-def mock_supernote_fixture(mock_schedule: AsyncMock) -> Generator[AsyncMock]:
+def mock_supernote_fixture(
+    mock_schedule: AsyncMock,
+    mock_login: AsyncMock,
+) -> Generator[AsyncMock]:
     """Mock the Supernote client."""
     _ = mock_schedule
+    _ = mock_login
     # Force reload of the component modules to ensure they pick up the patch
     for module in list(sys.modules.keys()):
         if module.startswith("custom_components.supernote_cloud"):
@@ -138,4 +155,9 @@ def mock_supernote_fixture(mock_schedule: AsyncMock) -> Generator[AsyncMock]:
         mock_sn_cls.from_token.return_value = mock_sn
         mock_sn_cls.from_auth.return_value = mock_sn
 
-        yield mock_sn
+        try:
+            yield mock_sn
+        finally:
+            for module in list(sys.modules.keys()):
+                if module.startswith("custom_components.supernote_cloud"):
+                    del sys.modules[module]
