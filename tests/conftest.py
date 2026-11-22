@@ -155,4 +155,9 @@ def mock_supernote_fixture(
         mock_sn_cls.from_token.return_value = mock_sn
         mock_sn_cls.from_auth.return_value = mock_sn
 
-        yield mock_sn
+        try:
+            yield mock_sn
+        finally:
+            for module in list(sys.modules.keys()):
+                if module.startswith("custom_components.supernote_cloud"):
+                    del sys.modules[module]
