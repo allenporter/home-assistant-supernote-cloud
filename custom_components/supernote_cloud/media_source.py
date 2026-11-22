@@ -18,6 +18,7 @@ from homeassistant.components.media_source import (
     PlayMedia,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from supernote.client.api import Supernote
 from supernote.client.exceptions import ApiException, UnauthorizedException
 from supernote.models.base import BooleanEnum
@@ -186,16 +187,20 @@ class ItemContentView(HomeAssistantView):
             _LOGGER.error(msg)
             return Response(status=400, text=msg)
         sn: Supernote = entry.runtime_data.client
+        auth = entry.runtime_data.auth
 
         try:
-            folder_contents = await sn.device.list_folder(
-                folder_id=identifier.parent_folder_id
+            folder_contents = await auth.async_call_with_retry(
+                lambda: sn.device.list_folder(folder_id=identifier.parent_folder_id)
             )
+        except ConfigEntryAuthFailed as err:
+            _LOGGER.error("Authentication failed during folder list: %s", err)
+            return Response(status=401, text=str(err))
         except UnauthorizedException as err:
             _LOGGER.error("Authentication failed during folder list: %s", err)
             entry.async_start_reauth(self.hass)
             return Response(status=401, text=str(err))
-        except ApiException as err:
+        except (ApiException, HomeAssistantError) as err:
             _LOGGER.error("Failed to fetch folder contents: %s", err)
             return Response(status=500, text=str(err))
 
@@ -219,7 +224,9 @@ class ItemContentView(HomeAssistantView):
             return Response(status=400, text=msg)
 
         try:
-            png_pages = await sn.device.note_to_png(int(file_info.id))
+            png_pages = await auth.async_call_with_retry(
+                lambda: sn.device.note_to_png(int(file_info.id))
+            )
             if (
                 png_pages.png_page_vo_list is None
                 or identifier.page_id is None
@@ -233,11 +240,14 @@ class ItemContentView(HomeAssistantView):
 
             content = await sn.client.get_content(page_vo.url)
             return Response(body=content, content_type="image/png")
+        except ConfigEntryAuthFailed as err:
+            _LOGGER.error("Authentication failed during note download: %s", err)
+            return Response(status=401, text=str(err))
         except UnauthorizedException as err:
             _LOGGER.error("Authentication failed during note download: %s", err)
             entry.async_start_reauth(self.hass)
             return Response(status=401, text=str(err))
-        except ApiException as err:
+        except (ApiException, HomeAssistantError) as err:
             _LOGGER.error("Failed to fetch note content: %s", err)
             return Response(status=500, text=str(err))
 
@@ -273,6 +283,9 @@ class SupernoteCloudMediaSource(MediaSource):
         """Return details about the media source."""
         try:
             return await self._async_browse_media(item)
+        except ConfigEntryAuthFailed as err:
+            _LOGGER.error("Authentication failed: %s", err)
+            raise BrowseError("Authentication failed") from err
         except UnauthorizedException as err:
             _LOGGER.error("Authentication failed: %s", err)
             if item.identifier:
@@ -325,6 +338,7 @@ class SupernoteCloudMediaSource(MediaSource):
         entry = self._async_config_entry(identifier.config_entry_id)
         entry_unique_id = cast(str, entry.unique_id)
         sn: Supernote = entry.runtime_data.client
+        auth = entry.runtime_data.auth
         if identifier.id_type == SupernoteIdentifierType.FOLDER:
             if identifier.parent_folder_id is None:
                 # This is the root folder for the account
@@ -332,15 +346,17 @@ class SupernoteCloudMediaSource(MediaSource):
             else:
                 try:
                     # Identifier media_id is the folder we are looking at
-                    path_info = await sn.web.path_query(identifier.media_id)
+                    path_info = await auth.async_call_with_retry(
+                        lambda: sn.web.path_query(identifier.media_id)
+                    )
                     name = (
                         path_info.path.split("/")[-1]
                         if path_info.path
                         else f"Folder {identifier.media_id}"
                     )
-                except UnauthorizedException:
+                except (ConfigEntryAuthFailed, UnauthorizedException):
                     raise
-                except ApiException:
+                except (ApiException, HomeAssistantError):
                     name = f"Folder {identifier.media_id}"
 
                 source = _build_folder(
@@ -351,12 +367,14 @@ class SupernoteCloudMediaSource(MediaSource):
 
             # Add the children of the folder
             try:
-                folder_contents_vo = await sn.web.list_query(
-                    directory_id=identifier.media_id, page_size=100
+                folder_contents_vo = await auth.async_call_with_retry(
+                    lambda: sn.web.list_query(
+                        directory_id=identifier.media_id, page_size=100
+                    )
                 )
-            except UnauthorizedException:
+            except (ConfigEntryAuthFailed, UnauthorizedException):
                 raise
-            except ApiException as err:
+            except (ApiException, HomeAssistantError) as err:
                 raise BrowseError(f"Failed to fetch folder contents: {err}") from err
 
             children = []
@@ -396,13 +414,14 @@ class SupernoteCloudMediaSource(MediaSource):
             raise ValueError("Cannot browse root folder as a note")
 
         # We are browsing a note file
+        parent_folder_id = identifier.parent_folder_id
         try:
-            parent_folder_contents_vo = await sn.web.list_query(
-                directory_id=identifier.parent_folder_id, page_size=100
+            parent_folder_contents_vo = await auth.async_call_with_retry(
+                lambda: sn.web.list_query(directory_id=parent_folder_id, page_size=100)
             )
-        except UnauthorizedException:
+        except (ConfigEntryAuthFailed, UnauthorizedException):
             raise
-        except ApiException as err:
+        except (ApiException, HomeAssistantError) as err:
             raise BrowseError(f"Failed to fetch parent folder contents: {err}") from err
 
         # Find the file in the listing
@@ -422,15 +441,18 @@ class SupernoteCloudMediaSource(MediaSource):
 
         # Convert note to PNG to get page count
         # We can use that for count.
+        note_id = int(file_info.id)
         try:
-            conversion_res = await sn.device.note_to_png(int(file_info.id))
+            conversion_res = await auth.async_call_with_retry(
+                lambda: sn.device.note_to_png(note_id)
+            )
             # We assume pages are just numbered for now or check if API gives names?
             # PngPageVO has url.
             page_count = len(conversion_res.png_page_vo_list)
             page_names = [f"Page {i + 1}" for i in range(page_count)]
-        except UnauthorizedException:
+        except (ConfigEntryAuthFailed, UnauthorizedException):
             raise
-        except ApiException as err:
+        except (ApiException, HomeAssistantError) as err:
             raise BrowseError(f"Failed to get note info: {err}") from err
         _LOGGER.debug("Note has %s pages", len(page_names))
 

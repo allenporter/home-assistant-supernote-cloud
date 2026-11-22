@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.components import llm as llm_component
+from homeassistant.const import CONF_ACCESS_TOKEN, CONF_PASSWORD
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers import llm
 from homeassistant.setup import async_setup_component
@@ -340,6 +341,175 @@ async def test_transcript_tool_auth_error(
         data={"error": "Supernote authentication failed: Unauthorized"},
         error=True,
     )
+
+    await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress()
+    assert len(flows) == 1
+    assert flows[0]["handler"] == DOMAIN
+    assert flows[0]["context"]["source"] == "reauth"
+
+
+@pytest.mark.usefixtures("mock_supernote")
+async def test_search_tool_mid_ttl_401_refreshes_and_retries(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    api_instance: llm.APIInstance,
+    mock_supernote: AsyncMock,
+    mock_login: AsyncMock,
+) -> None:
+    """Test SearchTool refreshes token and succeeds on retry after mid-TTL 401."""
+    mock_response = WebSearchResponseVO(
+        results=[
+            SearchResultVO(
+                file_id=123,
+                file_name="Recovered Note",
+                page_index=0,
+                page_id="page_0",
+                score=0.91,
+                text_preview="Recovered content",
+                date="2026-11-22",
+            )
+        ]
+    )
+    mock_supernote.client.post_json = AsyncMock(
+        side_effect=[UnauthorizedException("Invalid token"), mock_response]
+    )
+    mock_login.return_value = "refreshed-llm-token"
+
+    tool_input = llm.ToolInput(
+        tool_name=SEARCH_TOOL_NAME, tool_args={"query": "recovered"}
+    )
+    result = await api_instance.async_call_tool(tool_input)
+
+    assert result == llm.ToolResult(
+        data={
+            "results": [
+                {
+                    "file_name": "Recovered Note",
+                    "page_index": 0,
+                    "text_preview": "Recovered content",
+                    "score": 0.91,
+                    "date": "2026-11-22",
+                }
+            ]
+        },
+        error=False,
+    )
+    assert mock_login.await_count == 1
+    assert mock_supernote.client.post_json.await_count == 2
+    assert config_entry.options[CONF_ACCESS_TOKEN] == "refreshed-llm-token"
+    assert not hass.config_entries.flow.async_progress()
+
+
+@pytest.mark.usefixtures("mock_supernote")
+async def test_transcript_tool_mid_ttl_401_refreshes_and_retries(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    api_instance: llm.APIInstance,
+    mock_supernote: AsyncMock,
+    mock_login: AsyncMock,
+) -> None:
+    """Test TranscriptTool refreshes token and succeeds on retry after mid-TTL 401."""
+    mock_response = WebTranscriptResponseVO(
+        pages=[
+            PageTranscriptVO(
+                page_index=0,
+                page_id="page_0",
+                text="Recovered transcript",
+                date="2026-11-22",
+            )
+        ]
+    )
+    mock_supernote.client.post_json = AsyncMock(
+        side_effect=[UnauthorizedException("Invalid token"), mock_response]
+    )
+    mock_login.return_value = "refreshed-transcript-token"
+
+    tool_input = llm.ToolInput(
+        tool_name=TRANSCRIPT_TOOL_NAME, tool_args={"file_id": 12345}
+    )
+    result = await api_instance.async_call_tool(tool_input)
+
+    assert result == llm.ToolResult(
+        data={
+            "pages": [
+                {
+                    "page_index": 0,
+                    "text": "Recovered transcript",
+                    "date": "2026-11-22",
+                }
+            ]
+        },
+        error=False,
+    )
+    assert mock_login.await_count == 1
+    assert mock_supernote.client.post_json.await_count == 2
+    assert config_entry.options[CONF_ACCESS_TOKEN] == "refreshed-transcript-token"
+    assert not hass.config_entries.flow.async_progress()
+
+
+@pytest.mark.usefixtures("mock_supernote")
+async def test_search_tool_401_login_failure_starts_reauth(
+    hass: HomeAssistant,
+    api_instance: llm.APIInstance,
+    mock_supernote: AsyncMock,
+    mock_login: AsyncMock,
+) -> None:
+    """Test SearchTool starts reauth when reactive login fails."""
+    mock_supernote.client.post_json = AsyncMock(
+        side_effect=UnauthorizedException("Invalid token")
+    )
+    mock_login.side_effect = UnauthorizedException("Bad password")
+
+    tool_input = llm.ToolInput(
+        tool_name=SEARCH_TOOL_NAME, tool_args={"query": "test query"}
+    )
+    result = await api_instance.async_call_tool(tool_input)
+
+    assert result == llm.ToolResult(
+        data={"error": "Supernote authentication failed: Invalid credentials"},
+        error=True,
+    )
+    assert mock_login.await_count == 1
+    assert mock_supernote.client.post_json.await_count == 1
+
+    await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress()
+    assert len(flows) == 1
+    assert flows[0]["handler"] == DOMAIN
+    assert flows[0]["context"]["source"] == "reauth"
+
+
+@pytest.mark.usefixtures("mock_supernote")
+async def test_search_tool_401_no_password_starts_reauth(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    api_instance: llm.APIInstance,
+    mock_supernote: AsyncMock,
+    mock_login: AsyncMock,
+) -> None:
+    """Test SearchTool starts reauth without login when CONF_PASSWORD is absent."""
+    options_without_password = {
+        k: v for k, v in config_entry.options.items() if k != CONF_PASSWORD
+    }
+    hass.config_entries.async_update_entry(
+        config_entry, options=options_without_password
+    )
+    mock_supernote.client.post_json = AsyncMock(
+        side_effect=UnauthorizedException("Invalid token")
+    )
+
+    tool_input = llm.ToolInput(
+        tool_name=SEARCH_TOOL_NAME, tool_args={"query": "test query"}
+    )
+    result = await api_instance.async_call_tool(tool_input)
+
+    assert result == llm.ToolResult(
+        data={"error": "Supernote authentication failed: Invalid token"},
+        error=True,
+    )
+    mock_login.assert_not_awaited()
+    assert mock_supernote.client.post_json.await_count == 1
 
     await hass.async_block_till_done()
     flows = hass.config_entries.flow.async_progress()

@@ -7,6 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from supernote.client.api import Supernote
 
 if TYPE_CHECKING:
+    from .auth import ConfigEntryAuth
     from .coordinator import SupernoteStorageCoordinator, SupernoteTodoCoordinator
 
 
@@ -15,6 +16,7 @@ class SupernoteCloudData:
     """Runtime data stored in the ConfigEntry."""
 
     client: Supernote
+    auth: ConfigEntryAuth
     coordinator: SupernoteStorageCoordinator
     todo_coordinator: SupernoteTodoCoordinator
 

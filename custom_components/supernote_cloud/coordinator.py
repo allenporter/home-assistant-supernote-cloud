@@ -16,6 +16,7 @@ from supernote.models.base import BooleanEnum
 from supernote.models.file_device import CapacityLocalVO
 from supernote.models.schedule import ScheduleTaskGroupItem, ScheduleTaskInfo
 
+from .auth import ConfigEntryAuth
 from .const import DOMAIN
 from .types import SupernoteCloudConfigEntry
 
@@ -45,6 +46,7 @@ class SupernoteStorageCoordinator(DataUpdateCoordinator[CapacityLocalVO]):
         hass: HomeAssistant,
         entry: SupernoteCloudConfigEntry,
         client: Supernote,
+        auth: ConfigEntryAuth,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -55,12 +57,15 @@ class SupernoteStorageCoordinator(DataUpdateCoordinator[CapacityLocalVO]):
             update_interval=UPDATE_INTERVAL,
         )
         self.client = client
+        self.auth = auth
         self.entry = entry
 
     async def _async_update_data(self) -> CapacityLocalVO:
         """Fetch storage data from API."""
         try:
-            return await self.client.device.get_capacity()
+            return await self.auth.async_call_with_retry(
+                self.client.device.get_capacity
+            )
         except ConfigEntryAuthFailed:
             raise
         except UnauthorizedException as err:
@@ -86,6 +91,7 @@ class SupernoteTodoCoordinator(DataUpdateCoordinator[SupernoteTodoData]):
         hass: HomeAssistant,
         entry: SupernoteCloudConfigEntry,
         schedule: ScheduleClient,
+        auth: ConfigEntryAuth,
     ) -> None:
         """Initialize the todo coordinator."""
         super().__init__(
@@ -96,13 +102,21 @@ class SupernoteTodoCoordinator(DataUpdateCoordinator[SupernoteTodoData]):
             update_interval=TODO_UPDATE_INTERVAL,
         )
         self.schedule = schedule
+        self.auth = auth
         self.entry = entry
 
     async def _async_update_data(self) -> SupernoteTodoData:
         """Fetch schedule task groups and tasks from API."""
-        try:
+
+        async def _fetch() -> tuple[
+            list[ScheduleTaskGroupItem], list[ScheduleTaskInfo]
+        ]:
             raw_groups = [group async for group in self.schedule.list_groups()]
             raw_tasks = [task async for task in self.schedule.list_tasks()]
+            return raw_groups, raw_tasks
+
+        try:
+            raw_groups, raw_tasks = await self.auth.async_call_with_retry(_fetch)
         except ConfigEntryAuthFailed:
             raise
         except UnauthorizedException as err:

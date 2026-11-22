@@ -8,6 +8,7 @@ import probatio
 from homeassistant.components.llm import LLMTools
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.llm import (
     LLMContext,
@@ -105,15 +106,23 @@ class SearchTool(Tool):
         args = self.parameters(tool_input.tool_args)
 
         sn = self._entry.runtime_data.client
+        auth = self._entry.runtime_data.auth
         extended = ExtendedClient(sn.client)
 
         try:
-            results = await extended.search(
-                query=args["query"],
-                top_n=args.get("top_n", 5),
-                name_filter=args.get("name_filter"),
-                date_after=args.get("date_after"),
-                date_before=args.get("date_before"),
+            results = await auth.async_call_with_retry(
+                lambda: extended.search(
+                    query=args["query"],
+                    top_n=args.get("top_n", 5),
+                    name_filter=args.get("name_filter"),
+                    date_after=args.get("date_after"),
+                    date_before=args.get("date_before"),
+                )
+            )
+        except ConfigEntryAuthFailed as err:
+            return ToolResult(
+                data={"error": f"Supernote authentication failed: {err}"},
+                error=True,
             )
         except UnauthorizedException as err:
             self._entry.async_start_reauth(hass)
@@ -180,13 +189,21 @@ class TranscriptTool(Tool):
         args = self.parameters(tool_input.tool_args)
 
         sn = self._entry.runtime_data.client
+        auth = self._entry.runtime_data.auth
         extended = ExtendedClient(sn.client)
 
         try:
-            result = await extended.get_transcript(
-                file_id=args["file_id"],
-                start_index=args.get("start_index"),
-                end_index=args.get("end_index"),
+            result = await auth.async_call_with_retry(
+                lambda: extended.get_transcript(
+                    file_id=args["file_id"],
+                    start_index=args.get("start_index"),
+                    end_index=args.get("end_index"),
+                )
+            )
+        except ConfigEntryAuthFailed as err:
+            return ToolResult(
+                data={"error": f"Supernote authentication failed: {err}"},
+                error=True,
             )
         except UnauthorizedException as err:
             self._entry.async_start_reauth(hass)

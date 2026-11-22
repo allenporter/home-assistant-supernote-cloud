@@ -1,15 +1,17 @@
 """Tests for the Supernote Cloud sensor platform."""
 
-from unittest.mock import MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import UnitOfInformation
+from homeassistant.const import CONF_ACCESS_TOKEN, UnitOfInformation
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from supernote.client.exceptions import ApiException, UnauthorizedException
 from supernote.models.file_device import AllocationVO, CapacityLocalVO
+from supernote.models.schedule import ScheduleTaskGroupItem, ScheduleTaskInfo
 
 from custom_components.supernote_cloud.const import DOMAIN
 
@@ -163,3 +165,126 @@ async def test_zero_allocation_vo(
     state = hass.states.get("sensor.supernote_user_name_storage_usage_ratio")
     assert state is not None
     assert float(state.state) == 0.0
+
+
+@pytest.mark.usefixtures("setup_integration")
+async def test_storage_coordinator_mid_ttl_401_refreshes_and_retries(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_supernote: MagicMock,
+    mock_login: AsyncMock,
+) -> None:
+    """Test mid-TTL 401 in storage coordinator refreshes token and succeeds on retry."""
+    mock_capacity = CapacityLocalVO(
+        used=20 * 1024 * 1024 * 1024,
+        allocation_vo=AllocationVO(
+            tag="personal",
+            allocated=50 * 1024 * 1024 * 1024,
+        ),
+    )
+    mock_supernote.device.get_capacity.reset_mock()
+    mock_supernote.device.get_capacity.side_effect = [
+        UnauthorizedException("Invalid token"),
+        mock_capacity,
+    ]
+    mock_login.return_value = "refreshed-token-2"
+
+    coordinator = config_entry.runtime_data.coordinator
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert coordinator.last_update_success
+    assert mock_login.await_count == 1
+    assert mock_supernote.device.get_capacity.await_count == 2
+    assert config_entry.options[CONF_ACCESS_TOKEN] == "refreshed-token-2"
+    state = hass.states.get("sensor.supernote_user_name_storage_used")
+    assert state is not None
+    assert float(state.state) == 20.0
+    assert not hass.config_entries.flow.async_progress()
+
+
+@pytest.mark.usefixtures("setup_integration")
+async def test_coordinators_concurrent_401_share_single_login(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_supernote: MagicMock,
+    mock_schedule: AsyncMock,
+    mock_login: AsyncMock,
+) -> None:
+    """Test concurrent 401s across storage and todo coordinators share one login."""
+
+    async def _slow_login(username: str, password: str) -> str:
+        await asyncio.sleep(0.02)
+        return "shared-refreshed-token"
+
+    mock_login.side_effect = _slow_login
+
+    mock_capacity = CapacityLocalVO(
+        used=15 * 1024 * 1024 * 1024,
+        allocation_vo=AllocationVO(
+            tag="personal",
+            allocated=50 * 1024 * 1024 * 1024,
+        ),
+    )
+    mock_supernote.device.get_capacity.reset_mock()
+    mock_supernote.device.get_capacity.side_effect = [
+        UnauthorizedException("Invalid token"),
+        mock_capacity,
+    ]
+
+    async def _groups_gen():
+        yield ScheduleTaskGroupItem(task_list_id="grp-1", title="Work")
+
+    async def _tasks_gen():
+        yield ScheduleTaskInfo(
+            task_id="t-1",
+            task_list_id="grp-1",
+            title="Task",
+            status="needsAction",
+        )
+
+    mock_schedule.list_groups.reset_mock()
+    mock_schedule.list_groups.side_effect = [
+        UnauthorizedException("Invalid token"),
+        _groups_gen(),
+    ]
+    mock_schedule.list_tasks.side_effect = [_tasks_gen()]
+
+    await asyncio.gather(
+        config_entry.runtime_data.coordinator.async_refresh(),
+        config_entry.runtime_data.todo_coordinator.async_refresh(),
+    )
+    await hass.async_block_till_done()
+
+    assert config_entry.runtime_data.coordinator.last_update_success
+    assert config_entry.runtime_data.todo_coordinator.last_update_success
+    assert mock_login.await_count == 1
+    assert config_entry.options[CONF_ACCESS_TOKEN] == "shared-refreshed-token"
+    assert not hass.config_entries.flow.async_progress()
+
+
+@pytest.mark.usefixtures("setup_integration")
+async def test_storage_coordinator_401_login_failure_triggers_reauth(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    mock_supernote: MagicMock,
+    mock_login: AsyncMock,
+) -> None:
+    """Test failed login during reactive refresh triggers reauth without retry."""
+    mock_supernote.device.get_capacity.reset_mock()
+    mock_supernote.device.get_capacity.side_effect = UnauthorizedException(
+        "Invalid token"
+    )
+    mock_login.side_effect = UnauthorizedException("Invalid credentials")
+
+    coordinator = config_entry.runtime_data.coordinator
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert not coordinator.last_update_success
+    assert mock_login.await_count == 1
+    assert mock_supernote.device.get_capacity.await_count == 1
+    flows = hass.config_entries.flow.async_progress()
+    assert len(flows) == 1
+    assert flows[0]["handler"] == DOMAIN
+    assert flows[0]["context"]["source"] == "reauth"
