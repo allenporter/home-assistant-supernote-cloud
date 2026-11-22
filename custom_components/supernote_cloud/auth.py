@@ -61,43 +61,27 @@ class ConfigEntryAuth(AbstractAuth):
         age = now - token_ts
         return age > TOKEN_LIFETIME
 
-    def can_refresh(self) -> bool:
-        """Return True if credentials are available to refresh the access token."""
-        return bool(
-            self._entry.options.get(CONF_USERNAME)
-            and self._entry.options.get(CONF_PASSWORD)
-        )
-
     async def async_refresh_access_token(
         self,
         failed_token: str | None = None,
-    ) -> bool:
+    ) -> None:
         """Force a reactive access token refresh after a 401 response.
 
         Serialized with self._refresh_lock so concurrent 401s for the same stale
         token only trigger a single login request.
-
-        Returns True if the token was refreshed (by this call or a concurrent
-        caller) and the caller should retry once, or False if credentials are
-        not available to refresh.
         """
-        if not self.can_refresh():
-            self._invalidate_token_timestamp()
-            return False
-
         async with self._refresh_lock:
             current_token = self._entry.options.get(CONF_ACCESS_TOKEN)
             if failed_token is not None and current_token != failed_token:
                 _LOGGER.debug(
                     "Access token already refreshed by another request; skipping login"
                 )
-                return True
+                return
             try:
                 await self._refresh_access_token()
             except Exception:
                 self._invalidate_token_timestamp()
                 raise
-            return True
 
     async def async_call_with_retry[T](
         self,
@@ -108,8 +92,7 @@ class ConfigEntryAuth(AbstractAuth):
         try:
             return await func()
         except UnauthorizedException:
-            if not await self.async_refresh_access_token(failed_token=failed_token):
-                raise
+            await self.async_refresh_access_token(failed_token=failed_token)
         try:
             return await func()
         except UnauthorizedException:
@@ -129,8 +112,6 @@ class ConfigEntryAuth(AbstractAuth):
 
     async def _refresh_access_token(self) -> None:
         """Refresh access token."""
-        if not self.can_refresh():
-            return
         try:
             new_token = await self._login_client.login(
                 self._entry.options[CONF_USERNAME], self._entry.options[CONF_PASSWORD]

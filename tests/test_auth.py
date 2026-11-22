@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import aiohttp
 import pytest
 from aiohttp import web
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import (
     CONF_ACCESS_TOKEN,
     CONF_PASSWORD,
@@ -130,29 +131,21 @@ async def test_concurrent_401_shares_single_login_refresh(
     assert entry.options[CONF_ACCESS_TOKEN] == "fresh-token"
 
 
-async def test_reactive_refresh_no_password_invalidates_timestamp_and_raises(
+async def test_setup_missing_password_triggers_reauth(
     hass: HomeAssistant,
 ) -> None:
-    """Test 401 without stored password invalidates timestamp and re-raises without login."""
+    """Test config entry setup fails with reauth when stored password is missing."""
     entry = _make_entry(include_password=False)
     entry.add_to_hass(hass)
-    auth = ConfigEntryAuth(hass, entry, AsyncMock())
 
-    api_call = AsyncMock(side_effect=UnauthorizedException("Invalid token"))
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.SETUP_ERROR
 
-    with (
-        patch(
-            "custom_components.supernote_cloud.auth.LoginClient.login",
-            new_callable=AsyncMock,
-        ) as mock_login,
-        pytest.raises(UnauthorizedException, match="Invalid token"),
-    ):
-        await auth.async_call_with_retry(api_call)
-
-    mock_login.assert_not_awaited()
-    assert api_call.await_count == 1
-    assert entry.options[CONF_TOKEN_TIMESTAMP] == 0
-    assert auth.is_expired()
+    await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress()
+    assert len(flows) == 1
+    assert flows[0]["handler"] == DOMAIN
+    assert flows[0]["context"]["source"] == "reauth"
 
 
 async def test_reactive_refresh_login_unauthorized_raises_auth_failed(

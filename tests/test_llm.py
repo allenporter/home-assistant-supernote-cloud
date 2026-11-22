@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.components import llm as llm_component
-from homeassistant.const import CONF_ACCESS_TOKEN, CONF_PASSWORD
+from homeassistant.const import CONF_ACCESS_TOKEN
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers import llm
 from homeassistant.setup import async_setup_component
@@ -471,44 +471,6 @@ async def test_search_tool_401_login_failure_starts_reauth(
         error=True,
     )
     assert mock_login.await_count == 1
-    assert mock_supernote.client.post_json.await_count == 1
-
-    await hass.async_block_till_done()
-    flows = hass.config_entries.flow.async_progress()
-    assert len(flows) == 1
-    assert flows[0]["handler"] == DOMAIN
-    assert flows[0]["context"]["source"] == "reauth"
-
-
-@pytest.mark.usefixtures("mock_supernote")
-async def test_search_tool_401_no_password_starts_reauth(
-    hass: HomeAssistant,
-    config_entry: MockConfigEntry,
-    api_instance: llm.APIInstance,
-    mock_supernote: AsyncMock,
-    mock_login: AsyncMock,
-) -> None:
-    """Test SearchTool starts reauth without login when CONF_PASSWORD is absent."""
-    options_without_password = {
-        k: v for k, v in config_entry.options.items() if k != CONF_PASSWORD
-    }
-    hass.config_entries.async_update_entry(
-        config_entry, options=options_without_password
-    )
-    mock_supernote.client.post_json = AsyncMock(
-        side_effect=UnauthorizedException("Invalid token")
-    )
-
-    tool_input = llm.ToolInput(
-        tool_name=SEARCH_TOOL_NAME, tool_args={"query": "test query"}
-    )
-    result = await api_instance.async_call_tool(tool_input)
-
-    assert result == llm.ToolResult(
-        data={"error": "Supernote authentication failed: Invalid token"},
-        error=True,
-    )
-    mock_login.assert_not_awaited()
     assert mock_supernote.client.post_json.await_count == 1
 
     await hass.async_block_till_done()
