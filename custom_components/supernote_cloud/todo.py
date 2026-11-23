@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime as dt
-from functools import partial
 from typing import override
 
 from aiohttp import ClientError
@@ -268,15 +267,13 @@ class SupernoteTodoListEntity(
             else None
         )
         try:
-            await self.coordinator.auth.async_call_with_retry(
-                lambda: self.coordinator.schedule.create_task(
-                    group_id=self._group_id,
-                    title=title,
-                    detail=item.description,
-                    status=status_str,
-                    due_time=due_time,
-                    completed_time_ms=completed_time_ms,
-                )
+            await self.coordinator.schedule.create_task(
+                group_id=self._group_id,
+                title=title,
+                detail=item.description,
+                status=status_str,
+                due_time=due_time,
+                completed_time_ms=completed_time_ms,
             )
         except ConfigEntryAuthFailed:
             raise
@@ -335,15 +332,13 @@ class SupernoteTodoListEntity(
         due_time = _due_to_ms(item.due) if item.due is not None else 0
 
         try:
-            await self.coordinator.auth.async_call_with_retry(
-                lambda: self.coordinator.schedule.update_task(
-                    task_id=uid,
-                    title=title,
-                    detail=item.description or "",
-                    status=status_str,
-                    due_time=due_time,
-                    completed_time_ms=completed_time_ms,
-                )
+            await self.coordinator.schedule.update_task(
+                task_id=uid,
+                title=title,
+                detail=item.description or "",
+                status=status_str,
+                due_time=due_time,
+                completed_time_ms=completed_time_ms,
             )
         except ConfigEntryAuthFailed:
             raise
@@ -366,9 +361,7 @@ class SupernoteTodoListEntity(
                 if not uid:
                     continue
                 try:
-                    await self.coordinator.auth.async_call_with_retry(
-                        partial(self.coordinator.schedule.delete_task, uid)
-                    )
+                    await self.coordinator.schedule.delete_task(uid)
                 except NotFoundException:
                     pass
                 deleted_any = True

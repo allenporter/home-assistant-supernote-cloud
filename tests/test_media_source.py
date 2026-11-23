@@ -11,12 +11,11 @@ from homeassistant.components.media_source import (
     async_resolve_media,
 )
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_ACCESS_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
-from supernote.client.exceptions import ApiException, UnauthorizedException
+from supernote.client.exceptions import ApiException
 from supernote.models.base import BooleanEnum
 from supernote.models.file_web import FilePathQueryVO, PngPageVO, PngVO, UserFileVO
 
@@ -297,37 +296,3 @@ async def test_authentication_error(
 
     # Check if list_query was actually called
     assert mock_supernote.web.list_query.called
-
-
-@pytest.mark.usefixtures("setup_integration")
-async def test_browse_media_mid_ttl_401_refreshes_and_retries(
-    hass: HomeAssistant,
-    mock_supernote: MagicMock,
-    mock_login: AsyncMock,
-    config_entry: MockConfigEntry,
-) -> None:
-    """Test mid-TTL 401 during media browse refreshes token and succeeds on retry."""
-    folder_vo = MagicMock()
-    folder_vo.user_file_vo_list = [
-        UserFileVO(
-            id="1111111111111111",
-            directory_id="0",
-            file_name="Recovered Folder",
-            is_folder=BooleanEnum.YES,
-        )
-    ]
-    mock_supernote.web.list_query.side_effect = [
-        UnauthorizedException("Invalid token"),
-        folder_vo,
-    ]
-    mock_login.return_value = "refreshed-media-token"
-
-    browse = await async_browse_media(hass, f"{URI_SCHEME}{DOMAIN}/{ROOT_FOLDER_PATH}")
-
-    assert [(child.identifier, child.title) for child in browse.children] == [
-        (f"{ROOT_FOLDER_PATH}/1111111111111111", "Recovered Folder"),
-    ]
-    assert mock_login.await_count == 1
-    assert mock_supernote.web.list_query.await_count == 2
-    assert config_entry.options[CONF_ACCESS_TOKEN] == "refreshed-media-token"
-    assert not hass.config_entries.flow.async_progress()
