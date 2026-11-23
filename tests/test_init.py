@@ -168,86 +168,34 @@ async def test_setup_missing_password_triggers_reauth(
     assert flows[0]["context"]["source"] == "reauth"
 
 
-@pytest.mark.usefixtures("mock_supernote")
-async def test_setup_sms_verification_on_refresh_triggers_reauth(
-    hass: HomeAssistant,
-    mock_supernote: MagicMock,
-    mock_login: AsyncMock,
-) -> None:
-    """Test SMS verification required during reactive refresh starts reauth."""
-    mock_supernote.device.get_capacity.side_effect = UnauthorizedException(
-        "Invalid token"
-    )
-    mock_login.side_effect = SmsVerificationRequired("SMS needed", "12345")
-
-    entry = MockConfigEntry(
+def _create_http_entry(
+    host: str,
+    access_token: str = "stale-token",
+) -> MockConfigEntry:
+    """Create a MockConfigEntry pointing at a local test HTTP server."""
+    return MockConfigEntry(
         unique_id="user-identifier-1",
         title="user-name",
         domain=DOMAIN,
         options={
+            CONF_HOST: host,
             CONF_USERNAME: "user-name",
             CONF_PASSWORD: "some-password",
-            CONF_ACCESS_TOKEN: "access-token-1",
+            CONF_ACCESS_TOKEN: access_token,
             CONF_TOKEN_TIMESTAMP: dt_util.now().timestamp(),
             CONF_UNIQUE_ID: "user-identifier-1",
             CONF_API_USERNAME: "user-name",
         },
     )
-    entry.add_to_hass(hass)
-
-    assert not await hass.config_entries.async_setup(entry.entry_id)
-    assert entry.state is ConfigEntryState.SETUP_ERROR
-    assert entry.options[CONF_TOKEN_TIMESTAMP] == 0
-    assert mock_supernote.device.get_capacity.await_count == 1
-
-    await hass.async_block_till_done()
-    flows = hass.config_entries.flow.async_progress()
-    assert len(flows) == 1
-    assert flows[0]["handler"] == DOMAIN
-    assert flows[0]["context"]["source"] == "reauth"
 
 
-@pytest.mark.usefixtures("mock_supernote")
-async def test_setup_transient_login_error_retries_without_reauth(
-    hass: HomeAssistant,
-    mock_supernote: MagicMock,
-    mock_login: AsyncMock,
-) -> None:
-    """Test transient login API error invalidates timestamp and retries setup without reauth."""
-    mock_supernote.device.get_capacity.side_effect = UnauthorizedException(
-        "Invalid token"
-    )
-    mock_login.side_effect = ApiException("503 Service Unavailable")
-
-    entry = MockConfigEntry(
-        unique_id="user-identifier-1",
-        title="user-name",
-        domain=DOMAIN,
-        options={
-            CONF_USERNAME: "user-name",
-            CONF_PASSWORD: "some-password",
-            CONF_ACCESS_TOKEN: "access-token-1",
-            CONF_TOKEN_TIMESTAMP: dt_util.now().timestamp(),
-            CONF_UNIQUE_ID: "user-identifier-1",
-            CONF_API_USERNAME: "user-name",
-        },
-    )
-    entry.add_to_hass(hass)
-
-    assert not await hass.config_entries.async_setup(entry.entry_id)
-    assert entry.state is ConfigEntryState.SETUP_RETRY
-    assert entry.options[CONF_TOKEN_TIMESTAMP] == 0
-    assert mock_supernote.device.get_capacity.await_count == 1
-    assert not hass.config_entries.flow.async_progress()
-
-
-@pytest.mark.usefixtures("socket_enabled")
-async def test_setup_mid_ttl_401_end_to_end_with_http_server(
-    hass: HomeAssistant,
+async def _start_mock_supernote_server(
     aiohttp_server: AiohttpServer,
-) -> None:
-    """Test real Supernote client sends refreshed x-access-token on retry via HA setup."""
-    sent_tokens: list[str | None] = []
+    *,
+    valid_token: str | None = "fresh-token",
+) -> tuple[str, list[tuple[str, str | None]]]:
+    """Start a local aiohttp server that rejects non-matching tokens with 401."""
+    requests_seen: list[tuple[str, str | None]] = []
 
     async def _handle_csrf(request: web.Request) -> web.Response:
         _ = request
@@ -255,8 +203,8 @@ async def test_setup_mid_ttl_401_end_to_end_with_http_server(
 
     async def _handle_capacity(request: web.Request) -> web.Response:
         token = request.headers.get("x-access-token")
-        sent_tokens.append(token)
-        if token == "stale-token":
+        requests_seen.append(("capacity", token))
+        if valid_token is None or token != valid_token:
             return web.json_response(
                 {"success": False, "errorMsg": "Invalid token"},
                 status=401,
@@ -274,7 +222,194 @@ async def test_setup_mid_ttl_401_end_to_end_with_http_server(
 
     async def _handle_schedule_list(request: web.Request) -> web.Response:
         token = request.headers.get("x-access-token")
-        sent_tokens.append(token)
+        requests_seen.append((request.path, token))
+        if valid_token is None or token != valid_token:
+            return web.json_response(
+                {"success": False, "errorMsg": "Invalid token"},
+                status=401,
+            )
+        return web.json_response(
+            {"success": True, "scheduleTaskGroup": [], "scheduleTask": []}
+        )
+
+    app = web.Application()
+    app.router.add_get("/api/csrf", _handle_csrf)
+    app.router.add_post("/api/file/2/users/get_space_usage", _handle_capacity)
+    app.router.add_post("/api/file/schedule/group/all", _handle_schedule_list)
+    app.router.add_post("/api/file/schedule/task/all", _handle_schedule_list)
+    server = await aiohttp_server(app)
+    return str(server.make_url("")).rstrip("/"), requests_seen
+
+
+@pytest.mark.usefixtures("socket_enabled")
+async def test_setup_sms_verification_on_refresh_triggers_reauth(
+    hass: HomeAssistant,
+    aiohttp_server: AiohttpServer,
+    mock_login: AsyncMock,
+) -> None:
+    """Test SMS verification required during reactive refresh starts reauth."""
+    host, requests_seen = await _start_mock_supernote_server(aiohttp_server)
+    mock_login.side_effect = SmsVerificationRequired("SMS needed", "12345")
+
+    entry = _create_http_entry(host)
+    entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert entry.options[CONF_TOKEN_TIMESTAMP] == 0
+    assert requests_seen == [("capacity", "stale-token")]
+
+    await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress()
+    assert len(flows) == 1
+    assert flows[0]["handler"] == DOMAIN
+    assert flows[0]["context"]["source"] == "reauth"
+
+
+@pytest.mark.usefixtures("socket_enabled")
+async def test_setup_transient_login_error_retries_without_reauth(
+    hass: HomeAssistant,
+    aiohttp_server: AiohttpServer,
+    mock_login: AsyncMock,
+) -> None:
+    """Test transient login API error invalidates timestamp and retries setup without reauth."""
+    host, requests_seen = await _start_mock_supernote_server(aiohttp_server)
+    mock_login.side_effect = ApiException("503 Service Unavailable")
+
+    entry = _create_http_entry(host)
+    entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert entry.options[CONF_TOKEN_TIMESTAMP] == 0
+    assert requests_seen == [("capacity", "stale-token")]
+    assert not hass.config_entries.flow.async_progress()
+
+
+@pytest.mark.usefixtures("socket_enabled")
+async def test_setup_401_login_failure_triggers_reauth(
+    hass: HomeAssistant,
+    aiohttp_server: AiohttpServer,
+    mock_login: AsyncMock,
+) -> None:
+    """Test invalid credentials during reactive refresh triggers reauth without retry."""
+    host, requests_seen = await _start_mock_supernote_server(aiohttp_server)
+    mock_login.side_effect = UnauthorizedException("Invalid credentials")
+
+    entry = _create_http_entry(host)
+    entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert entry.options[CONF_TOKEN_TIMESTAMP] == 0
+    assert requests_seen == [("capacity", "stale-token")]
+    mock_login.assert_awaited_once_with("user-name", "some-password")
+
+    await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress()
+    assert len(flows) == 1
+    assert flows[0]["handler"] == DOMAIN
+    assert flows[0]["context"]["source"] == "reauth"
+
+
+@pytest.mark.usefixtures("socket_enabled")
+async def test_setup_401_after_refresh_triggers_reauth(
+    hass: HomeAssistant,
+    aiohttp_server: AiohttpServer,
+    mock_login: AsyncMock,
+) -> None:
+    """Test 401 persisting after token refresh triggers reauth."""
+    host, requests_seen = await _start_mock_supernote_server(
+        aiohttp_server, valid_token=None
+    )
+    mock_login.return_value = "fresh-token"
+
+    entry = _create_http_entry(host)
+    entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert requests_seen == [
+        ("capacity", "stale-token"),
+        ("capacity", "fresh-token"),
+    ]
+    mock_login.assert_awaited_once_with("user-name", "some-password")
+
+    await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress()
+    assert len(flows) == 1
+    assert flows[0]["handler"] == DOMAIN
+    assert flows[0]["context"]["source"] == "reauth"
+
+
+@pytest.mark.usefixtures("socket_enabled")
+async def test_setup_mid_ttl_401_end_to_end_with_http_server(
+    hass: HomeAssistant,
+    aiohttp_server: AiohttpServer,
+    mock_login: AsyncMock,
+) -> None:
+    """Test real Supernote client sends refreshed x-access-token on retry via HA setup."""
+    host, requests_seen = await _start_mock_supernote_server(aiohttp_server)
+    mock_login.return_value = "fresh-token"
+
+    entry = _create_http_entry(host)
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert requests_seen[0] == ("capacity", "stale-token")
+    assert requests_seen[1] == ("capacity", "fresh-token")
+    mock_login.assert_awaited_once_with("user-name", "some-password")
+    assert entry.options[CONF_ACCESS_TOKEN] == "fresh-token"
+    state = hass.states.get("sensor.supernote_user_name_storage_used")
+    assert state is not None
+    assert float(state.state) == 10.0
+    assert not hass.config_entries.flow.async_progress()
+
+
+@pytest.mark.usefixtures("socket_enabled")
+async def test_coordinators_concurrent_401_share_single_login(
+    hass: HomeAssistant,
+    aiohttp_server: AiohttpServer,
+    mock_login: AsyncMock,
+) -> None:
+    """Test concurrent 401s across storage and todo coordinators share one login."""
+    active_token = "initial-token"
+    requests_seen: list[tuple[str, str | None]] = []
+
+    async def _handle_csrf(request: web.Request) -> web.Response:
+        _ = request
+        return web.Response(headers={"X-XSRF-TOKEN": "csrf-1"})
+
+    async def _handle_capacity(request: web.Request) -> web.Response:
+        token = request.headers.get("x-access-token")
+        requests_seen.append(("capacity", token))
+        if token != active_token:
+            return web.json_response(
+                {"success": False, "errorMsg": "Invalid token"},
+                status=401,
+            )
+        return web.json_response(
+            {
+                "success": True,
+                "used": 15 * 1024 * 1024 * 1024,
+                "allocationVO": {
+                    "tag": "personal",
+                    "allocated": 50 * 1024 * 1024 * 1024,
+                },
+            }
+        )
+
+    async def _handle_schedule_list(request: web.Request) -> web.Response:
+        token = request.headers.get("x-access-token")
+        requests_seen.append((request.path, token))
+        if token != active_token:
+            return web.json_response(
+                {"success": False, "errorMsg": "Invalid token"},
+                status=401,
+            )
         return web.json_response(
             {"success": True, "scheduleTaskGroup": [], "scheduleTask": []}
         )
@@ -287,36 +422,31 @@ async def test_setup_mid_ttl_401_end_to_end_with_http_server(
     server = await aiohttp_server(app)
     host = str(server.make_url("")).rstrip("/")
 
-    entry = MockConfigEntry(
-        unique_id="user-identifier-1",
-        title="user-name",
-        domain=DOMAIN,
-        options={
-            CONF_HOST: host,
-            CONF_USERNAME: "user-name",
-            CONF_PASSWORD: "some-password",
-            CONF_ACCESS_TOKEN: "stale-token",
-            CONF_TOKEN_TIMESTAMP: dt_util.now().timestamp(),
-            CONF_UNIQUE_ID: "user-identifier-1",
-            CONF_API_USERNAME: "user-name",
-        },
-    )
+    entry = _create_http_entry(host, access_token="initial-token")
     entry.add_to_hass(hass)
 
-    with patch(
-        "supernote.client.login_client.LoginClient.login",
-        new_callable=AsyncMock,
-        return_value="fresh-token",
-    ) as mock_login:
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.LOADED
-    assert sent_tokens[0] == "stale-token"
-    assert sent_tokens[1] == "fresh-token"
-    mock_login.assert_awaited_once_with("user-name", "some-password")
-    assert entry.options[CONF_ACCESS_TOKEN] == "fresh-token"
-    state = hass.states.get("sensor.supernote_user_name_storage_used")
-    assert state is not None
-    assert float(state.state) == 10.0
+
+    # Rotate server-side valid token so both coordinators hit 401 simultaneously
+    active_token = "shared-refreshed-token"
+
+    async def _slow_login(username: str, password: str) -> str:
+        _ = (username, password)
+        await asyncio.sleep(0.02)
+        return "shared-refreshed-token"
+
+    mock_login.side_effect = _slow_login
+
+    await asyncio.gather(
+        entry.runtime_data.coordinator.async_refresh(),
+        entry.runtime_data.todo_coordinator.async_refresh(),
+    )
+    await hass.async_block_till_done()
+
+    assert entry.runtime_data.coordinator.last_update_success
+    assert entry.runtime_data.todo_coordinator.last_update_success
+    assert mock_login.await_count == 1
+    assert entry.options[CONF_ACCESS_TOKEN] == "shared-refreshed-token"
     assert not hass.config_entries.flow.async_progress()

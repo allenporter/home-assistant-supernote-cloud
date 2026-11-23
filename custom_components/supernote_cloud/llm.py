@@ -106,18 +106,15 @@ class SearchTool(Tool):
         args = self.parameters(tool_input.tool_args)
 
         sn = self._entry.runtime_data.client
-        auth = self._entry.runtime_data.auth
         extended = ExtendedClient(sn.client)
 
         try:
-            results = await auth.async_call_with_retry(
-                lambda: extended.search(
-                    query=args["query"],
-                    top_n=args.get("top_n", 5),
-                    name_filter=args.get("name_filter"),
-                    date_after=args.get("date_after"),
-                    date_before=args.get("date_before"),
-                )
+            results = await extended.search(
+                query=args["query"],
+                top_n=args.get("top_n", 5),
+                name_filter=args.get("name_filter"),
+                date_after=args.get("date_after"),
+                date_before=args.get("date_before"),
             )
         except ConfigEntryAuthFailed as err:
             return ToolResult(
@@ -189,16 +186,13 @@ class TranscriptTool(Tool):
         args = self.parameters(tool_input.tool_args)
 
         sn = self._entry.runtime_data.client
-        auth = self._entry.runtime_data.auth
         extended = ExtendedClient(sn.client)
 
         try:
-            result = await auth.async_call_with_retry(
-                lambda: extended.get_transcript(
-                    file_id=args["file_id"],
-                    start_index=args.get("start_index"),
-                    end_index=args.get("end_index"),
-                )
+            result = await extended.get_transcript(
+                file_id=args["file_id"],
+                start_index=args.get("start_index"),
+                end_index=args.get("end_index"),
             )
         except ConfigEntryAuthFailed as err:
             return ToolResult(

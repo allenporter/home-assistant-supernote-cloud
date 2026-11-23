@@ -11,9 +11,9 @@ from .types import SupernoteCloudConfigEntry
 
 async def async_get_supernote_client(
     hass: HomeAssistant, entry: SupernoteCloudConfigEntry
-) -> tuple[Supernote, ConfigEntryAuth]:
-    """Get an authenticated Supernote API client and its auth handler."""
+) -> Supernote:
+    """Get an authenticated Supernote API client."""
     session = aiohttp_client.async_get_clientsession(hass)
     host = entry.options.get(CONF_HOST, DEFAULT_HOST)
     auth = ConfigEntryAuth(hass, entry, session)
-    return Supernote.from_auth(auth, host=host, session=session), auth
+    return Supernote.from_auth(auth, host=host, session=session)

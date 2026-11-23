@@ -3,8 +3,7 @@
 import asyncio
 import datetime as dt
 import logging
-from collections.abc import Awaitable, Callable
-from typing import cast
+from typing import cast, override
 
 import aiohttp
 from homeassistant.const import CONF_ACCESS_TOKEN, CONF_PASSWORD, CONF_USERNAME
@@ -61,10 +60,8 @@ class ConfigEntryAuth(AbstractAuth):
         age = now - token_ts
         return age > TOKEN_LIFETIME
 
-    async def async_refresh_access_token(
-        self,
-        failed_token: str | None = None,
-    ) -> None:
+    @override
+    async def async_refresh_access_token(self, failed_token: str) -> bool:
         """Force a reactive access token refresh after a 401 response.
 
         Serialized with self._refresh_lock so concurrent 401s for the same stale
@@ -72,32 +69,17 @@ class ConfigEntryAuth(AbstractAuth):
         """
         async with self._refresh_lock:
             current_token = self._entry.options.get(CONF_ACCESS_TOKEN)
-            if failed_token is not None and current_token != failed_token:
+            if current_token != failed_token:
                 _LOGGER.debug(
                     "Access token already refreshed by another request; skipping login"
                 )
-                return
+                return True
             try:
                 await self._refresh_access_token()
             except Exception:
                 self._invalidate_token_timestamp()
                 raise
-
-    async def async_call_with_retry[T](
-        self,
-        func: Callable[[], Awaitable[T]],
-    ) -> T:
-        """Execute an API call, refreshing the token and retrying once on 401."""
-        failed_token = cast(str | None, self._entry.options.get(CONF_ACCESS_TOKEN))
-        try:
-            return await func()
-        except UnauthorizedException:
-            await self.async_refresh_access_token(failed_token=failed_token)
-        try:
-            return await func()
-        except UnauthorizedException:
-            self._invalidate_token_timestamp()
-            raise
+            return True
 
     def _invalidate_token_timestamp(self) -> None:
         """Invalidate the cached token timestamp so reloads do not reuse a dead token."""
